@@ -32,13 +32,73 @@ if (serviceAccountJson) {
 }
 
 // Parse allowed emails from env
-const allowedEmails: string[] = (() => {
-	try {
-		return JSON.parse(process.env.ALLOWED_EMAILS ?? "[]");
-	} catch {
-		return [];
-	}
-})();
+const allowedEmailsByLocation: Record<string, string[]> = {
+	"redwood-free-market": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_REDWOOD ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"cowell-coffee-shop": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_COWELL ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"produce-pop-up": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_PRODUCE ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"womxns-center-food-pantry": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_WOMXNS ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"center-for-agroecology-farmstand": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_AGROECOLOGY ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"lionel-cantu-queer-center-food-pantry": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_QUEER ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"ethnic-resource-centers-snack-pantry": (() => {
+		try {
+			return JSON.parse(
+				process.env.ALLOWED_EMAILS_ETHNIC_RESOURCE_CENTERS ?? "[]",
+			);
+		} catch {
+			return [];
+		}
+	})(),
+	"terry-freitas-cafe": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_TERRY_FREITAS ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+	"the-cove": (() => {
+		try {
+			return JSON.parse(process.env.ALLOWED_EMAILS_THE_COVE ?? "[]");
+		} catch {
+			return [];
+		}
+	})(),
+};
 
 const express = require("express");
 
@@ -83,7 +143,7 @@ app.use(
 // Parse JSON request bodies
 app.use(express.json());
 
-// Auth middleware — verifies Firebase ID token and checks email allowlist
+// Auth middleware — verifies Firebase ID token and checks facility and email allowlist
 async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 	const authHeader = req.headers.authorization;
 	if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -94,9 +154,16 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 	const token = authHeader.split("Bearer ")[1];
 	try {
 		const decoded = await admin.auth().verifyIdToken(token);
-		const email = decoded.email;
+		const email = decoded.email?.toLowerCase();
+		const location = req.params.parameter || req.params.location;
+		if (!location || !locations.includes(location)) {
+			res.status(400).json({ error: "Invalid location: ${location}" });
+			return;
+		}
+
+		const allowedEmails = allowedEmailsByLocation[location] ?? [];
 		if (!email || !allowedEmails.includes(email)) {
-			res.status(403).json({ error: "Forbidden: email not in allowlist" });
+			res.status(403).json({ error: "Forbidden access for facility"});
 			return;
 		}
 		next();

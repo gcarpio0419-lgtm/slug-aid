@@ -90,15 +90,18 @@ async function updateFood({
 
 interface ImageUploaderProps {
 	signOut: () => void;
+	location: string;
 }
 
-export default function ImageUploader({ signOut }: ImageUploaderProps) {
+export default function ImageUploader({ 
+	signOut, 
+	location,
+}: ImageUploaderProps) {
 	// Specify the type as `File | null`
 	const [file, setFile] = useState<File | null>(null);
 	const [uploading, setUploading] = useState<boolean>(false);
 	const [actionLoading, setActionLoading] = useState<boolean>(false); // New loading state
 	const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
-	const [location, setLocation] = useState<string>("redwood-free-market");
 	const [statusText, setStatusText] = useState<string>("");
 	const [foodText, setFoodText] = useState<string>("");
 
@@ -305,8 +308,10 @@ export default function ImageUploader({ signOut }: ImageUploaderProps) {
 					background: "white",
 				}}
 			>
+
 				{/* Uploader Section */}
 				<Box sx={{ flex: 1, minWidth: 0 }}>
+					{/*
 					<FormControl fullWidth margin="normal">
 						<InputLabel id="locations-label">Location</InputLabel>
 						<Select
@@ -322,6 +327,7 @@ export default function ImageUploader({ signOut }: ImageUploaderProps) {
 							))}
 						</Select>
 					</FormControl>
+					*/}
 
 					<TextField
 						type="file"

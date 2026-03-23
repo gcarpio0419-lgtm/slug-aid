@@ -62,6 +62,11 @@ export default function SearchBar() {
 	const searchBarRef = useRef<HTMLInputElement | null>(null);
 	const open = Boolean(anchorEl) && searchTerm.length > 0;
 	// Fetch the data once on mount
+
+	useEffect(() => {
+		console.log("API URL:", process.env.NEXT_PUBLIC_API_URL);
+	}, []);
+
 	useEffect(() => {
 		const fetchData = async () => {
 			try {

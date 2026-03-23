@@ -1,56 +1,129 @@
 "use client";
 
-import { onAuthStateChanged, signOut, User } from "firebase/auth";
-import ImageUploader from "@/components/ImageUploader";
-import { useEffect, useState } from "react";
-import { auth } from "@/utils/firebase-config";
-import LoginScreen from "@/components/LoginScreen";
+import Link from "next/link";
+import { Box, Button, Typography, Stack, Paper } from "@mui/material";
 
-const allowedEmails: string[] = JSON.parse(
-	process.env.NEXT_PUBLIC_ALLOWED_EMAILS ?? "[]"
-);
+export default function UploaderHubPage() {
+  return (
+    <Box
+      sx={{
+        minHeight: "100vh",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        p: 3,
+      }}
+    >
+      <Paper elevation={3} sx={{ p: 4, width: "100%", maxWidth: 500 }}>
+        <Typography variant="h4" gutterBottom>
+          Select Facility
+        </Typography>
 
-const Home = () => {
-	const [user, setUser] = useState<User | null>(null);
-	const [authorized, setAuthorized] = useState(false);
-	const [loading, setLoading] = useState(true);
+        <Stack spacing={2}>
+          <Button
+            component={Link}
+            href="/uploader/redwood-free-market"
+            variant="contained"
+            fullWidth
+          >
+            Redwood
+          </Button>
 
-	useEffect(() => {
-		const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-			setLoading(false);
-			if (firebaseUser) {
-				const email = firebaseUser.email?.toLowerCase();
-				if (email && allowedEmails.includes(email)) {
-					setUser(firebaseUser);
-					setAuthorized(true);
-				} else {
-					setUser(null);
-					setAuthorized(false);
-				}
-			}
-		});
+          {/*
+          <Button
+            component={Link}
+            href="/uploader/cowell-coffee-shop"
+            variant="contained"
+            fullWidth
+          >
+            Cowell
+          </Button>
 
-		return () => unsubscribe();
-	}, []);
+          <Button
+            component={Link}
+            href="/uploader/ethnic-resource-centers-snack-pantry"
+            variant="contained"
+            fullWidth
+          >
+            Ethnic Resource Center
+          </Button>
 
-	function handleLogout() {
-		signOut(auth);
-		window.location.reload();
-	}
+		            <Button
+            component={Link}
+            href="/uploader/lionel-cantu-queer-center-food-pantry"
+            variant="contained"
+            fullWidth
+          >
+            Lionel Cantu
+          </Button>
 
-	console.log(allowedEmails);
+		            <Button
+            component={Link}
+            href="/uploader/terry-freitas-cafe"
+            variant="contained"
+            fullWidth
+          >
+            Terry Freitas
+          </Button>
 
-	if (loading) {
-		return <p>Loading...</p>;
-	}
+		            <Button
+            component={Link}
+            href="/uploader/produce-pop-up"
+            variant="contained"
+            fullWidth
+          >
+            Produce Pop Up
+          </Button>
 
-	return authorized && user ? (
-		<div className="bg-white flex justify-center items-center">
-			<ImageUploader signOut={handleLogout} />
-		</div>
-	) : (
-		<LoginScreen />
-	);
-};
+		            <Button
+            component={Link}
+            href="/uploader/womxns-center-food-pantry"
+            variant="contained"
+            fullWidth
+          >
+            Womens Center
+          </Button>
 
-export default Home;
+		            <Button
+            component={Link}
+            href="/uploader/center-for-agroecology-farmstand"
+            variant="contained"
+            fullWidth
+          >
+            Agrecology
+          </Button>
+          */}
+
+          <Button disabled fullWidth>
+            Cowell (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Ethnic Resource Center (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Lionel Cantu (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Terry Freitas (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Produce Pop Up (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Womens Center (Coming Soon)
+          </Button>
+
+          <Button disabled fullWidth>
+            Agroecology (Coming Soon)
+          </Button>
+
+        </Stack>
+      </Paper>
+    </Box>
+  );
+}

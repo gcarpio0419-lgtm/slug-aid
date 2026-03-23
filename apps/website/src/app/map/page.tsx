@@ -20,18 +20,20 @@ type locations = keyof typeof locationData;
 
 interface LocationProps {
 	open: boolean;
-	onClose: (value: string) => void;
+	onClose: () => void;
 }
 
 interface LocationInterface {
 	location: keyof typeof locationData;
 }
 
+const activeFacilities = ["redwood-free-market"] as const;
+
 const App = () => {
 	// const router = useRouter();
 	const [open, setOpen] = useState(false);
 	const [location, setLocation] = useState<keyof typeof locationData>(
-		"redwood-free-market"
+		"redwood-free-market",
 	);
 
 	function onClose() {
@@ -63,7 +65,17 @@ const App = () => {
 					<Typography>{currentLocation.about}</Typography>
 				</DialogContent>
 
-				{currentLocation.dbName == "redwood-free-market" ? (
+				{[
+					"redwood-free-market",
+					//add facility names here
+					//"produce-pop-up",
+					//"center-for-agroecology-farmstand",
+					//"cowell-coffee-shop",
+					//"ethnic-resource-centers-snack-pantry",
+					//"lionel-cantu-queer-center-food-pantry",
+					//"terry-freitas-cafe",
+					//"womxns-center-food-pantry"
+				].includes(currentLocation.dbName) ? (
 					<Button
 						sx={{ margin: 3, font: "lato" }}
 						variant="contained"
@@ -72,7 +84,13 @@ const App = () => {
 						More
 					</Button>
 				) : (
-					<></>
+					<Button
+						sx={{ margin: 3, font: "lato" }}
+						variant="outlined"
+						disabled
+					>
+						Coming Soon
+					</Button>
 				)}
 			</Dialog>
 		);
@@ -99,10 +117,20 @@ const App = () => {
 								title={facility.name}
 								clickable={true}
 								onClick={() =>
-									handleClick({ location: facility.dbName } as LocationInterface)
+									handleClick({ location: key as keyof typeof locationData })
 								}
 							>
-								{facility.dbName === "redwood-free-market" ? (
+								{[
+									"redwood-free-market",
+									//add facility names here
+									//"produce-pop-up",
+									//"center-for-agroecology-farmstand",
+									//"cowell-coffee-shop",
+									//"ethnic-resource-centers-snack-pantry",
+									//"lionel-cantu-queer-center-food-pantry",
+									//"terry-freitas-cafe",
+									//"womxns-center-food-pantry"
+								].includes(facility.dbName) ? (
 									<FoodIcon style={{ width: "30px", height: "30px" }} />
 								) : (
 									<FoodIconDesaturated style={{ width: "30px", height: "30px" }} />
