@@ -23,7 +23,6 @@ import {
 	Snackbar,
 	Alert,
 } from "@mui/material";
-import { stringify } from "querystring";
 
 async function updateStatus({
 	message,
@@ -60,9 +59,11 @@ async function updateStatus({
 async function updateFood({
 	message,
 	location,
+	area,
 }: {
 	message: string[];
 	location: string;
+	area: string;
 }) {
 	try {
 		const token = await getAuthToken();
@@ -74,7 +75,7 @@ async function updateFood({
 					"Content-Type": "application/json",
 					...(token && { Authorization: `Bearer ${token}` }),
 				},
-				body: JSON.stringify({ message }),
+				body: JSON.stringify({ message, area }),
 			}
 		);
 
@@ -94,6 +95,12 @@ interface ImageUploaderProps {
 	location: string;
 }
 
+interface FoodItem {
+	id: string;
+	labels: string[];
+	area?: string;
+}
+
 export default function ImageUploader({ 
 	signOut, 
 	location,
@@ -105,6 +112,7 @@ export default function ImageUploader({
 	const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string>("");
 	const [foodText, setFoodText] = useState<string>("");
+	const [selectedArea, setSelectedArea] = useState<string>("shelf");
 
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -114,7 +122,7 @@ export default function ImageUploader({
 	);
 
 	// Food list state
-	const [foodList, setFoodList] = useState<{ id: string; labels: string[] }[]>(
+	const [foodList, setFoodList] = useState<FoodItem[]>(
 		[]
 	);
 	const [foodLoading, setFoodLoading] = useState<boolean>(false);
@@ -219,7 +227,7 @@ export default function ImageUploader({
 
 		setActionLoading(true); // Start loading
 		setUploading(true);
-		const storageRef = ref(storage, `${location}/${file.name}`);
+		const storageRef = ref(storage, `pdfs/${location}/${file.name}`);
 
 		try {
 			await uploadBytes(storageRef, file);
@@ -304,6 +312,17 @@ export default function ImageUploader({
 			setActionLoading(false);
 		}
 	};
+
+	const groupedFood = foodList.reduce<Record<string, FoodItem[]>>((acc, item) => {
+		const area = item.area || "shelf";
+
+		if (!acc[area]) {
+			acc[area] = [];
+		}
+
+		acc[area].push(item);
+		return acc;
+	}, {});
 
 	// confirm handler
 	const handleConfirmPdfItems = async () => {
@@ -484,6 +503,22 @@ export default function ImageUploader({
 						variant="outlined"
 					/>
 
+					<FormControl fullWidth margin="normal">
+						<InputLabel id="pantry-area-label">Pantry Area</InputLabel>
+						<Select
+							labelId="pantry-area-label"
+							value={selectedArea}
+							label="Pantry Area"
+							onChange={(e) => setSelectedArea(e.target.value)}
+						>
+							<MenuItem value="shelf">Shelf</MenuItem>
+							<MenuItem value="fridge">Fridge</MenuItem>
+							<MenuItem value="freezer">Freezer</MenuItem> 
+							<MenuItem value="produce">Produce Area</MenuItem>
+							<MenuItem value="counter">Counter</MenuItem>
+						</Select>
+					</FormControl>
+
 					<Button
 						variant="contained"
 						color="success"
@@ -504,6 +539,7 @@ export default function ImageUploader({
 									const result = await updateFood({
 										message: [foodItem], // Send as single item array
 										location: location,
+										area: selectedArea,
 									});
 									if (result) {
 										successCount++;
@@ -685,26 +721,40 @@ export default function ImageUploader({
 					) : foodList.length === 0 ? (
 						<p>No food items found.</p>
 					) : (
-						<ul style={{ paddingLeft: 20 }}>
-							{foodList.map((item) => (
-								<li
-									key={item.id}
-									style={{ display: "flex", alignItems: "center", marginBottom: 4 }}
-								>
-									<input
-										type="checkbox"
-										checked={selectedFoodIds.includes(item.id)}
-										onChange={() => handleSelectFood(item.id)}
-										style={{ marginRight: 8 }}
-									/>
-									<span style={{ flex: 1 }}>
-										{item.labels && item.labels.length > 0
-											? item.labels.join(", ")
-											: "(no label)"}
-									</span>
-								</li>
+						<Box>
+							{Object.entries(groupedFood).map(([area, items]) => (
+								<Box key={area} sx={{ mb: 2 }}>
+									<h4 style={{ textTransform: "capitalize", marginBottom: 8 }}>
+										{area}
+									</h4>
+
+									<ul style={{ paddingLeft: 20 }}>
+										{items.map((item) => (
+											<li
+												key={item.id}
+												style={{
+													display: "flex",
+													alignItems: "center",
+													marginBottom: 4,
+												}}
+											>
+												<input
+													type="checkbox"
+													checked={selectedFoodIds.includes(item.id)}
+													onChange={() => handleSelectFood(item.id)}
+													style={{ marginRight: 8 }}
+												/>
+												<span style={{ flex: 1 }}>
+													{item.labels && item.labels.length > 0
+														? item.labels.join(", ")
+														: "(no label)"}
+												</span>
+											</li>
+										))}
+									</ul>
+								</Box>
 							))}
-						</ul>
+						</Box>
 					)}
 					{selectedFoodIds.length > 0 && (
 						<Button

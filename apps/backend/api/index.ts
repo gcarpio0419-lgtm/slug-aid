@@ -188,7 +188,7 @@ function validateLocation(req: Request, res: Response, next: NextFunction) {
 	next();
 }
 
-let food: { [key: string]: { id: string; labels: string[] }[] } = {};
+let food: { [key: string]: { id: string; labels: string[], area?: string }[] } = {};
 let images: { [key: string]: string[] } = {};
 let status: { [key: string]: { message: string; timestamp: string } } = {};
 
@@ -207,6 +207,18 @@ async function uploadLabels(location: string, labels: string[]) {
 async function fetchImages(location: string) {
 	const folderRef = ref(storage, location);
 	const result = await listAll(folderRef);
+	// filtering pdfs since it now shows the scanned pdf on the 'products available'
+	const imageItems = result.items.filter((itemRef) => {
+		const name = itemRef.name.toLowerCase();
+
+		return (
+			name.endsWith(".jpg") ||
+			name.endsWith(".jpeg") ||
+			name.endsWith(".png") ||
+			name.endsWith(".webp") ||
+			name.endsWith(".gif")
+		);
+	});
 	const urlPromises = result.items.map((itemRef) => getDownloadURL(itemRef));
 
 	// Wait for all download URLs to resolve
@@ -216,10 +228,10 @@ async function fetchImages(location: string) {
 
 //fetches the food list with ids for a given location from firebase
 async function fetchFoodWithIds(location: string) {
-	const foodArr: { id: string; labels: string[] }[] = [];
+	const foodArr: { id: string; labels: string[]; area?: string }[] = [];
 	const querySnapshot = await getDocs(collection(db, location));
 	querySnapshot.forEach((doc) => {
-		foodArr.push({ id: doc.id, labels: doc.data().labels });
+		foodArr.push({ id: doc.id, labels: doc.data().labels, area: doc.data().area || "shelf", });
 	});
 	return foodArr;
 }
@@ -664,11 +676,13 @@ app.put("/update-status/:parameter", authMiddleware, validateLocation, async (re
 
 app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	try {
-		const { message } = req.body;
+		const { message,area } = req.body;
 		console.log(message);
+		console.log(area);
 		const location = req.params.parameter;
 		console.log(location);
-		await addDoc(collection(db, location), { labels: message });
+		await addDoc(collection(db, location), { labels: message, area: area || "shelf",
+		 });
 		console.log("Document added/updated successfully!");
 		res.status(200).json({ success: true });
 	} catch (error) {
