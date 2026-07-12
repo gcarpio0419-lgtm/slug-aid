@@ -151,13 +151,15 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 		return;
 	}
 
+	
+
 	const token = authHeader.split("Bearer ")[1];
 	try {
 		const decoded = await admin.auth().verifyIdToken(token);
 		const email = decoded.email?.toLowerCase();
 		const location = req.params.parameter || req.params.location;
 		if (!location || !locations.includes(location)) {
-			res.status(400).json({ error: "Invalid location: ${location}" });
+			res.status(400).json({ error: `Invalid location: ${location}` });
 			return;
 		}
 
@@ -173,6 +175,8 @@ async function authMiddleware(req: Request, res: Response, next: NextFunction) {
 		return;
 	}
 }
+
+
 
 // Location validation middleware — checks that the location param is valid
 function validateLocation(req: Request, res: Response, next: NextFunction) {
@@ -299,6 +303,10 @@ app.get("/status/:parameter", async (req: Request, res: Response) => {
 	res.json({ status: data });
 });
 
+app.get("/debug-routes", async (req: Request, res: Response) => {
+	res.status(200).json({ ok: true });
+});
+
 //gets a formatted list of all the available foods (used for the search bar)
 app.get("/all-food", async (req: Request, res: Response) => {
 	console.log(Object.keys(food).length === 0);
@@ -364,15 +372,13 @@ app.post("/scan-items", authMiddleware, async (req: Request, res: Response) => {
 });
 
 //scans a PDF for item descriptions and uploads them to firebase
-app.post("/scan-pdf", authMiddleware, async (req: Request, res: Response) => {
+app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	try {
-		const { url, location } = req.body;
-		if (!url || !location) {
-			res.status(400).json({ error: "Missing url or location" });
-			return;
-		}
-		if (!locations.includes(location)) {
-			res.status(400).json({ error: `Invalid location: ${location}` });
+		const location = req.params.parameter;
+		const { url } = req.body;
+
+		if (!url) {
+			res.status(400).json({ error: "Missing url"});
 			return;
 		}
 
@@ -400,19 +406,13 @@ app.post("/scan-pdf", authMiddleware, async (req: Request, res: Response) => {
 		console.log("Extracted item descriptions:", itemDescriptions);
 
 		if (itemDescriptions.length === 0) {
-			return res.status(200).json({ message: "No food items found in PDF." });
+			return res.status(200).json({
+				message: "No food items found in PDF.",
+				items: [],
+			});
 		}
 
-		// Upload each item description
-		for (const desc of itemDescriptions) {
-			await uploadLabels(location, [desc]);
-		}
-
-		// Update the food cache
-		food[location] = await fetchFoodWithIds(location);
-
-		res.json({
-			uploaded: itemDescriptions.length,
+		return res.json({
 			items: itemDescriptions,
 		});
 	} catch (error) {
@@ -420,6 +420,39 @@ app.post("/scan-pdf", authMiddleware, async (req: Request, res: Response) => {
 		res
 			.status(500)
 			.json({ error: "An error occurred while processing the PDF." });
+	}
+});
+
+app.post("/scan-pdf-confirm/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
+	try {
+		const location = req.params.parameter;
+		const { items } = req.body;
+
+		if (!Array.isArray(items)) {
+			return res.status(400).json({ error: "Items must be an array." });
+		}
+
+		const cleanedItems = items
+			.map((item: string) => String(item).trim())
+			.filter((item: string) => item.length > 0);
+
+		if (cleanedItems.length === 0) {
+			return res.status(400).json({ error: "No valid items to upload." });
+		}
+
+		for (const item of cleanedItems) {
+			await uploadLabels(location, [item]);
+		}
+
+		food[location] = await fetchFoodWithIds(location);
+
+		return res.status(200).json({
+			uploaded: cleanedItems.length,
+			items: cleanedItems,
+		});
+	} catch (error) {
+		console.error("Error confirming PDF items:", error);
+		return res.status(500).json({ error: "Failed to save approved PDF items." });
 	}
 });
 

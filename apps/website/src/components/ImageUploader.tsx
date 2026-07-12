@@ -23,6 +23,7 @@ import {
 	Snackbar,
 	Alert,
 } from "@mui/material";
+import { stringify } from "querystring";
 
 async function updateStatus({
 	message,
@@ -123,6 +124,12 @@ export default function ImageUploader({
 	const [pdfFile, setPdfFile] = useState<File | null>(null);
 	const [pdfUploading, setPdfUploading] = useState<boolean>(false);
 	const [pdfUploadedUrl, setPdfUploadedUrl] = useState<string | null>(null);
+
+	// misc.
+	const [pdfPreviewItems, setPdfPreviewItems] = useState<
+		{ id: string; name: string; selected: boolean}[]
+	>([]);
+	const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
 
 	// Fetch food list for the selected location (with ids)
 	const fetchFoodList = async (loc = location) => {
@@ -264,7 +271,7 @@ export default function ImageUploader({
 			setPdfUploadedUrl(url);
 			// Call backend to scan PDF
 			const token = await getAuthToken();
-			const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scan-pdf`, {
+			const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/scan-pdf/${location}`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -276,11 +283,14 @@ export default function ImageUploader({
 				throw new Error(`Error: ${response.statusText}`);
 			}
 			const data = await response.json();
-			setSnackbarMessage(
-				data.uploaded
-					? `PDF scanned! ${data.uploaded} items added.`
-					: data.message || "PDF scanned."
-			);
+			const previewItems = (data.items || []).map((name: string, index: number) => ({
+				id: `${index}-${name}`,
+				name,
+				selected: true,
+			}));
+			setPdfPreviewItems(previewItems);
+			setPdfPreviewOpen(true);
+			setSnackbarMessage("Review scanned items before saving");
 			setSnackbarSeverity("success");
 			setSnackbarOpen(true);
 			await fetchFoodList(); // Refresh food list after scan
@@ -294,6 +304,67 @@ export default function ImageUploader({
 			setActionLoading(false);
 		}
 	};
+
+	// confirm handler
+	const handleConfirmPdfItems = async () => {
+		const approvedItems = pdfPreviewItems
+			.filter((item) => item.selected)
+			.map((item) => item.name.trim())
+			.filter(Boolean);
+		if (approvedItems.length === 0) {
+			setSnackbarMessage("No valid items selected.");
+			setSnackbarSeverity("error");
+			setSnackbarOpen(true);
+			return;
+		}
+		setActionLoading(true);
+		try {
+			const token = await getAuthToken();
+			const response = await fetch(
+				`${process.env.NEXT_PUBLIC_API_URL}/scan-pdf-confirm/${location}`,
+				{
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						...(token && { Authorization: `Bearer ${token}` }),
+					},
+					body: JSON.stringify({ items: approvedItems }),
+				}
+			);
+			if (!response.ok) {
+				throw new Error(`Error: ${response.statusText}`);
+			}
+			const data = await response.json();
+
+			setSnackbarMessage(
+				data.uploaded 
+					? `Added ${data.uploaded} items successfully.`
+					: "Items saved successfully."
+			);
+			setSnackbarSeverity("success");
+			setSnackbarOpen(true);
+			setPdfPreviewItems([]);
+			setPdfPreviewOpen(false);
+			await fetchFoodList();
+
+		} catch (error) {
+			console.error("Error saving approved PDF items:", error);
+			setSnackbarMessage("Error saving approved items.");
+		} finally {
+			setActionLoading(false);
+		}
+	};
+
+	//cancel button
+	const handleCancelPdfPreview = () => {
+		setPdfPreviewItems([]);
+		setPdfPreviewOpen(false);
+		setPdfFile(null);
+		setPdfUploadedUrl(null);
+		setSnackbarMessage("PDF Review cancelled.");
+		setSnackbarSeverity("success");
+		setSnackbarOpen(true);
+	}
 
 	return (
 		<div className="flex flex-col">
@@ -495,6 +566,81 @@ export default function ImageUploader({
 							"Scan PDF"
 						)}
 					</Button>
+					{pdfPreviewOpen && (
+						<Box sx={{ marginTop: 3 }}>
+							<h3>Review scanned items</h3>
+
+							{pdfPreviewItems.length === 0 ? (
+								<p>No scanned items to review.</p>
+							) : (
+								pdfPreviewItems.map((item) => (
+									<Box
+										key={item.id}
+										sx={{
+											display: "flex",
+											alignItems: "center",
+											gap: 1,
+											marginBottom: 1,
+										}}
+									>
+										<input
+											type="checkbox"
+											checked={item.selected}
+											onChange={() => {
+												setPdfPreviewItems((prev) =>
+													prev.map((entry) =>
+														entry.id === item.id
+															? { ...entry, selected: !entry.selected }
+															: entry
+													)
+												);
+											}}
+										/>
+
+										<TextField
+											fullWidth
+											size="small"
+											value={item.name}
+											onChange={(e) => {
+												setPdfPreviewItems((prev) =>
+													prev.map((entry) =>
+														entry.id === item.id
+															? { ...entry, name: e.target.value }
+															: entry
+													)
+												);
+											}}
+										/>
+									</Box>
+								))
+							)}
+							<Box sx={{ display: "flex", gap: 2, marginTop: 2}}>
+								<Button	
+									variant="outlined"
+									fullWidth
+									onClick={handleCancelPdfPreview}
+									disabled={actionLoading}
+								>
+									Cancel
+								</Button>
+
+								<Button
+									variant="contained"
+									color="success"
+									fullWidth
+									sx={{ marginTop: 2 }}
+									onClick={handleConfirmPdfItems}
+									disabled={actionLoading}
+								>
+									{actionLoading ? (
+										<CircularProgress size={24} color="inherit" />
+									) : (
+										`Add ${pdfPreviewItems.filter((item) => item.selected).length} Items`
+									)}
+								</Button>
+							</Box>
+						</Box>
+					)}
 					{pdfUploadedUrl && (
 						<Box sx={{ marginTop: 2, textAlign: "center" }}>
 							<p>
