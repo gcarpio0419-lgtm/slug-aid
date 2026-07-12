@@ -199,7 +199,9 @@ export default function LocationTemplate({ config }: Config) {
 			<div className="py-12">
 				<div className="bg-white flex justify-center">
 					<div className="w-10/12">
-						<h2 className="text-slugBlue text-3xl font-bold pb-2">Facility Hours</h2>
+						<h2 className="text-slugBlue text-3xl font-bold pb-2">
+							Facility Hours (Summer)
+						</h2>
 					</div>
 				</div>
 				<div className="bg-white flex justify-center text-slugSecondaryBlue font-semibold">
