@@ -11,6 +11,8 @@ async function getAuthToken(): Promise<string | undefined> {
 	return auth.currentUser?.getIdToken();
 }
 
+type Availability = "in_stock" | "running_out" | "out_of_stock";
+
 import {
 	Box,
 	Button,
@@ -60,9 +62,11 @@ async function updateStatus({
 async function updateFood({
 	message,
 	location,
+	availability,
 }: {
 	message: string[];
 	location: string;
+	availability: Availability;
 }) {
 	try {
 		const token = await getAuthToken();
@@ -74,7 +78,7 @@ async function updateFood({
 					"Content-Type": "application/json",
 					...(token && { Authorization: `Bearer ${token}` }),
 				},
-				body: JSON.stringify({ message }),
+				body: JSON.stringify({ message, availability, }),
 			}
 		);
 
@@ -105,6 +109,7 @@ export default function ImageUploader({
 	const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string>("");
 	const [foodText, setFoodText] = useState<string>("");
+	const [foodAvailability, setFoodAvailability] = useState<Availability>("in_stock");
 
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -114,7 +119,7 @@ export default function ImageUploader({
 	);
 
 	// Food list state
-	const [foodList, setFoodList] = useState<{ id: string; labels: string[] }[]>(
+	const [foodList, setFoodList] = useState<{ id: string; labels: string[]; availability: Availability }[]>(
 		[]
 	);
 	const [foodLoading, setFoodLoading] = useState<boolean>(false);
@@ -157,6 +162,60 @@ export default function ImageUploader({
 		setSelectedFoodIds((prev) =>
 			prev.includes(id) ? prev.filter((fid) => fid !== id) : [...prev, id]
 		);
+	};
+
+	// Updates an existing item's availabilty and synchronizes the local list after success
+	const handleAvailabilityChange = async (
+	id: string,
+	availability: Availability
+	) => {
+		try {
+			const token = await getAuthToken();
+
+			const response = await fetch(
+				`${process.env.NEXT_PUBLIC_API_URL}/food/${location}/${id}/availability`,
+				{
+					method: "PATCH",
+					headers: {
+						"Content-Type": "application/json",
+						...(token && {
+							Authorization: `Bearer ${token}`,
+						}),
+					},
+					body: JSON.stringify({
+						availability,
+					}),
+				}	
+			);
+
+			if (!response.ok) {
+				throw new Error(
+					`Error updating availability: ${response.statusText}`
+				);
+			}
+
+			// Replaces only the updated item's availability while preserving the rest of the list.
+			setFoodList((currentFoodList) =>
+				currentFoodList.map((foodItem) =>
+					foodItem.id === id
+						? {
+								...foodItem,
+								availability,
+							}
+						: foodItem
+				)
+			);
+
+			setSnackbarMessage("Availability updated successfully.");
+			setSnackbarSeverity("success");
+			setSnackbarOpen(true);
+		} catch (error) {
+			console.error("Error updating availability:", error);
+
+			setSnackbarMessage("Failed to update availability.");
+			setSnackbarSeverity("error");
+			setSnackbarOpen(true);
+		}
 	};
 
 	// Delete selected food documents
@@ -484,6 +543,35 @@ export default function ImageUploader({
 						variant="outlined"
 					/>
 
+					<FormControl fullWidth margin="normal">
+						<InputLabel id="food-availability-label">
+							Availability
+						</InputLabel>
+
+						<Select
+							labelId="food-availability-label"
+							value={foodAvailability}
+							label="Availability"
+							onChange={(event) =>
+								setFoodAvailability(
+									event.target.value as Availability
+								)
+							}
+						>
+							<MenuItem value="in_stock">
+								IN STOCK
+							</MenuItem>
+
+							<MenuItem value="running_out">
+								RUNNING OUT
+							</MenuItem>
+
+							<MenuItem value="out_of_stock">
+								OUT OF STOCK
+							</MenuItem>
+						</Select>
+					</FormControl>
+
 					<Button
 						variant="contained"
 						color="success"
@@ -504,6 +592,7 @@ export default function ImageUploader({
 									const result = await updateFood({
 										message: [foodItem], // Send as single item array
 										location: location,
+										availability: foodAvailability,
 									});
 									if (result) {
 										successCount++;
@@ -517,6 +606,8 @@ export default function ImageUploader({
 							}
 
 							if (successCount > 0) {
+								setFoodText("");
+								setFoodAvailability("in_stock");
 								setSnackbarMessage(
 									`Food updated successfully! ${successCount} items added${errorCount > 0 ? `, ${errorCount} failed` : ""}`
 								);
@@ -702,6 +793,30 @@ export default function ImageUploader({
 											? item.labels.join(", ")
 											: "(no label)"}
 									</span>
+
+									<Select
+										size="small"
+										value={item.availability ?? "in_stock"}
+										onChange={(event) =>
+											handleAvailabilityChange(
+												item.id,
+												event.target.value as Availability
+											)
+										}
+										sx={{ minWidth: 150 }}
+									>
+										<MenuItem value="in_stock">
+											IN STOCK
+										</MenuItem>
+
+										<MenuItem value="running_out">
+											RUNNING OUT
+										</MenuItem>
+
+										<MenuItem value="out_of_stock">
+											OUT OF STOCK
+										</MenuItem>
+									</Select>
 								</li>
 							))}
 						</ul>

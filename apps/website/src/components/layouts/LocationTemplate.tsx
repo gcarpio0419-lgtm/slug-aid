@@ -7,15 +7,19 @@ import Footer from "../Footer";
 import { Dialog, DialogContent } from "@mui/material";
 import FoodLabel from "../FoodLabel";
 
+type Availability = "in_stock" | "running_out" | "out_of_stock";
+interface FoodItem {
+	id: string;
+	labels: string[];
+	availability: Availability;
+}
+
 interface imageData {
 	urls: string[];
 }
 
-interface foodData {
-	food: Array<{
-		id: string;
-		labels: string[];
-	}>;
+interface FoodData {
+	food: FoodItem[];
 }
 
 interface statusData {
@@ -36,9 +40,7 @@ interface Config {
 }
 
 export default function LocationTemplate({ config }: Config) {
-	const [foodList, setFoodList] = useState<
-		Array<{ id: string; labels: string[] }>
-	>([]);
+	const [foodList, setFoodList] = useState<FoodItem[]>([]);
 	const [foodImages, setFoodImages] = useState<string[]>([]);
 	const [status, setStatus] = useState<{ message: string; timestamp: string } | null>(null);
 
@@ -51,7 +53,7 @@ export default function LocationTemplate({ config }: Config) {
 				if (!response.ok) {
 					throw new Error(`Error: ${response.statusText}`);
 				}
-				const data: foodData = await response.json();
+				const data: FoodData = await response.json();
 				console.log(data.food);
 
 				setFoodList(data.food);
@@ -174,13 +176,14 @@ export default function LocationTemplate({ config }: Config) {
 			<div className="bg-white flex justify-center pt-5">
 				<div className="w-10/12">
 					<h2 className="text-slugBlue text-3xl font-bold pb-2">
-						Products Available
+						Product Inventory
 					</h2>
 					<div className="text-slugSecondaryBlue font-semibold text-2xl grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+						{/* Passes each item's availability to its colored status badge with a legacy-data fallback. */}
 						{foodList
 							.sort((a, b) => a.labels.join(", ").length - b.labels.join(", ").length)
 							.map((food) => (
-								<FoodLabel key={food.id} label={food.labels.join(", ")} />
+								<FoodLabel key={food.id} label={food.labels.join(", ")} availability={food.availability ?? "in_stock"}/>
 							))}
 					</div>
 				</div>

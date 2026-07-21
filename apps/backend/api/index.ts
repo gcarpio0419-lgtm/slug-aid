@@ -132,10 +132,17 @@ const fireApp = initializeApp(firebaseConfig);
 const storage = getStorage(fireApp);
 const db = getFirestore(fireApp);
 
+// Provides runtime validation for the three inventory statuses accepted from API requests
+const VALID_AVAILABILITY = new Set<Availability>([
+	"in_stock",
+	"running_out",
+	"out_of_stock",
+]);
+
 app.use(
 	cors({
 		origin: [process.env.NEXT_PUBLIC_WEBSITE_URL, "http://localhost:3000"],
-		methods: ["GET", "POST", "PUT", "DELETE"],
+		methods: ["GET", "POST", "PUT", "PATCH", "DELETE"], //added PATCH so it can change an existing item's availability
 		credentials: true,
 	}),
 );
@@ -188,15 +195,24 @@ function validateLocation(req: Request, res: Response, next: NextFunction) {
 	next();
 }
 
-let food: { [key: string]: { id: string; labels: string[] }[] } = {};
+//retricts availabilty to 3 statuses by the application
+type Availability = "in_stock" | "running_out" | "out_of_stock";
+
+//describes firestore food record with its doc ID, labels, and availability
+interface FoodItem {
+	id:string;
+	labels: string[];
+	availability: Availability;
+}
+let food: Record<string,FoodItem[]> = {};
 let images: { [key: string]: string[] } = {};
 let status: { [key: string]: { message: string; timestamp: string } } = {};
 
 //uploads food labels to firebase
-async function uploadLabels(location: string, labels: string[]) {
+async function uploadLabels(location: string, labels: string[], availability: Availability = "in_stock") {
 	console.log(location);
 	try {
-		await addDoc(collection(db, location), { labels: labels });
+		await addDoc(collection(db, location), { labels: labels, availability });
 		console.log("Document added successfully!");
 	} catch (error) {
 		console.error("Error adding document:", error);
@@ -215,11 +231,18 @@ async function fetchImages(location: string) {
 }
 
 //fetches the food list with ids for a given location from firebase
-async function fetchFoodWithIds(location: string) {
-	const foodArr: { id: string; labels: string[] }[] = [];
+async function fetchFoodWithIds(location: string): Promise<FoodItem[]> {
+	const foodArr: FoodItem[] = []
 	const querySnapshot = await getDocs(collection(db, location));
-	querySnapshot.forEach((doc) => {
-		foodArr.push({ id: doc.id, labels: doc.data().labels });
+	
+	querySnapshot.forEach((foodDoc) => {
+		const data = foodDoc.data();
+
+		foodArr.push({
+			id: foodDoc.id,
+			labels: Array.isArray(data.labels) ? data.labels : [],
+			availability: data.availability ?? "in_stock",
+		});
 	});
 	return foodArr;
 }
@@ -662,13 +685,46 @@ app.put("/update-status/:parameter", authMiddleware, validateLocation, async (re
 	res.status(200).json({ success: true });
 });
 
+//rejects messy values before writing to Firestore
 app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	try {
-		const { message } = req.body;
+		const { 
+			message,
+			availability = "in_stock", 
+		}: {
+			message?: unknown;
+			availability?: unknown;
+		} = req.body;
 		console.log(message);
 		const location = req.params.parameter;
 		console.log(location);
-		await addDoc(collection(db, location), { labels: message });
+
+		if (
+			!Array.isArray(message) ||
+			message.length === 0 ||
+			!message.every(
+				(label) =>
+					typeof label === "string" &&
+					label.trim().length > 0
+			)
+		) {
+			return res.status(400).json({
+				error: "At least one valid food label is required.",
+			});
+		}
+
+		if (
+			typeof availability !== "string" ||
+			!VALID_AVAILABILITY.has(
+				availability as Availability
+			)
+		) {
+			return res.status(400).json({
+				error: "Invalid availability value.",
+			});
+		}
+
+		await addDoc(collection(db, location), { labels: message.map((label) => label.trim()), availability });
 		console.log("Document added/updated successfully!");
 		res.status(200).json({ success: true });
 	} catch (error) {
@@ -676,6 +732,54 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 		res.status(500).json({ error: "Failed to update food" });
 	}
 });
+
+//updated only the availability of an existing authenticated food record
+app.patch("/food/:location/:id/availability", authMiddleware, validateLocation, async (req: Request, res: Response) => {
+	try {
+			const { location, id } = req.params;
+			const {
+				availability,
+			}: {
+				availability?: unknown;
+			} = req.body;
+
+			if (
+				typeof availability !== "string" || !VALID_AVAILABILITY.has(availability as Availability
+				)
+			) {
+				return res.status(400).json({
+					error: "Invalid availability value.",
+				});
+			}
+			const foodReference = doc(db, location, id);
+			//prevents an uodated from accidentally creating a nonexistent food item
+			const existingFood = await getDoc(foodReference);
+			if (!existingFood.exists()) {
+				return res.status(404).json({
+					error: "Food item not found.",
+				});
+			}
+			//merges the new availability into the document without replacing its existing labels
+			await setDoc(
+				foodReference,
+				{ availability },
+				{ merge: true }
+			);
+
+			return res.status(200).json({
+				success: true,
+				id,
+				availability,
+			});
+		} catch (error) {
+			console.error("Error updating food availability:", error);
+
+			return res.status(500).json({
+				error: "Failed to update food availability.",
+			});
+		}
+	}
+);
 
 // DELETE a food document by id for a given location
 app.delete("/food/:location/:id", authMiddleware, validateLocation, async (req: Request, res: Response) => {
