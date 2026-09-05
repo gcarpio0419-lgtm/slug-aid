@@ -84,7 +84,7 @@ const allowedEmailsByLocation: Record<string, string[]> = {
 			return [];
 		}
 	})(),
-	"terry-freitas-cafe": (() => {
+	"terry-freitas-commons": (() => {
 		try {
 			return JSON.parse(process.env.ALLOWED_EMAILS_TERRY_FREITAS ?? "[]");
 		} catch {
@@ -122,7 +122,7 @@ const locations = [
 	"redwood-free-market",
 	"cowell-coffee-shop",
 	"produce-pop-up",
-	"terry-freitas-cafe",
+	"terry-freitas-commons",
 	"center-for-agroecology-farmstand",
 	"ethnic-resource-centers-snack-pantry",
 	"lionel-cantu-queer-center-food-pantry",

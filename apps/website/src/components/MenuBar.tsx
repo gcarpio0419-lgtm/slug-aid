@@ -64,7 +64,7 @@ function DrawerInfo() {
 				</ul>
 				{Object.entries(LocationData).map(([key, value]) => {
 					// Temporarily remove all locations except RFM
-					if (value.dbName !== "redwood-free-market") {
+					if (value.dbName !== "redwood-free-market" && value.dbName !== "terry-freitas-commons") {
 						return null;
 					}
 
