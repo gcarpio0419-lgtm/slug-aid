@@ -92,10 +92,10 @@
 		"hours": {
 			"monday": "10am-8pm",
 			"tuesday": "10am-8pm",
-			"wednesday": "10am-6pm",
+			"wednesday": "10am-8pm",
 			"thursday": "10am-8pm",
 			"friday": "10am-8pm",
-			"saturday": "10am-6pm",
+			"saturday": "12am-4pm",
 			"sunday": "Closed"
 		}
 	},
