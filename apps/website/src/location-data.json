@@ -10,11 +10,11 @@
 			"lng": -122.06441695766976
 		},
 		"hours": {
-			"monday": "Closed",
-			"tuesday": "Closed",
-			"wednesday": "12pm-5pm",
-			"thursday": "12pm-5pm",
-			"friday": "Closed",
+			"monday": "2PM-5PM",
+			"tuesday": "9AM-1PM & 2PM-5PM",
+			"wednesday": "9AM-1PM & 2PM-5PM",
+			"thursday": "9AM-1PM & 2PM-5PM",
+			"friday": "9AM-12PM",
 			"saturday": "Closed",
 			"sunday": "Closed"
 		}
