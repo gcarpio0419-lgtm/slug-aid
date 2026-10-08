@@ -12,6 +12,7 @@ async function getAuthToken(): Promise<string | undefined> {
 }
 
 type Availability = "in_stock" | "running_out" | "out_of_stock";
+type AvailabilityFilter = Availability | "all";
 
 import {
 	Box,
@@ -110,6 +111,7 @@ export default function ImageUploader({
 	const [statusText, setStatusText] = useState<string>("");
 	const [foodText, setFoodText] = useState<string>("");
 	const [foodAvailability, setFoodAvailability] = useState<Availability>("in_stock");
+	const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>("all");
 
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -122,6 +124,14 @@ export default function ImageUploader({
 	const [foodList, setFoodList] = useState<{ id: string; labels: string[]; availability: Availability }[]>(
 		[]
 	);
+	const filteredFoodList = foodList.filter((item) => {
+		const availability = item.availability ?? "in_stock";
+		return (
+			availabilityFilter === "all" ||
+			availability === availabilityFilter
+		);
+	});
+
 	const [foodLoading, setFoodLoading] = useState<boolean>(false);
 	const [selectedFoodIds, setSelectedFoodIds] = useState<string[]>([]);
 
@@ -771,13 +781,38 @@ export default function ImageUploader({
 				>
 					<h3 style={{ marginTop: 0 }}>Current Food at this Location</h3>
 
+					<FormControl fullWidth size="small" sx={{ mb: 2 }}>
+						<InputLabel id="availability-filter-label">
+							Filter by availability
+						</InputLabel>
+
+						<Select
+							labelId="availability-filter-label"
+							value={availabilityFilter}
+							label="Filter by availability"
+							onChange={(event) => {
+								setAvailabilityFilter(
+									event.target.value as AvailabilityFilter
+								);
+
+								// Prevent hidden selected items from being deleted accidentally.
+								setSelectedFoodIds([]);
+							}}
+						>
+							<MenuItem value="all">All items</MenuItem>
+							<MenuItem value="in_stock">In stock</MenuItem>
+							<MenuItem value="running_out">Running out</MenuItem>
+							<MenuItem value="out_of_stock">Out of stock</MenuItem>
+						</Select>
+					</FormControl>
+
 					{foodLoading ? (
 						<CircularProgress size={24} />
 					) : foodList.length === 0 ? (
 						<p>No food items found.</p>
 					) : (
 						<ul style={{ paddingLeft: 20 }}>
-							{foodList.map((item) => (
+							{filteredFoodList.map((item) => (
 								<li
 									key={item.id}
 									style={{ display: "flex", alignItems: "center", marginBottom: 4 }}

@@ -29,6 +29,16 @@ export default function UploaderHubPage() {
             Redwood
           </Button>
 
+          <Button
+            component={Link}
+            href="/uploader/terry-freitas-commons"
+            variant="contained"
+            fullWidth
+          >
+            Terry Freitas
+          </Button>
+
+
           {/*
           <Button
             component={Link}
@@ -55,15 +65,6 @@ export default function UploaderHubPage() {
             fullWidth
           >
             Lionel Cantu
-          </Button>
-
-		            <Button
-            component={Link}
-            href="/uploader/terry-freitas-cafe"
-            variant="contained"
-            fullWidth
-          >
-            Terry Freitas
           </Button>
 
 		            <Button
@@ -106,9 +107,11 @@ export default function UploaderHubPage() {
             Lionel Cantu (Coming Soon)
           </Button>
 
+          {/*  
           <Button disabled fullWidth>
             Terry Freitas (Coming Soon)
           </Button>
+          */}
 
           <Button disabled fullWidth>
             Produce Pop Up (Coming Soon)

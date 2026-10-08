@@ -67,13 +67,13 @@ const App = () => {
 
 				{[
 					"redwood-free-market",
+					"terry-freitas-commons",
 					//add facility names here
 					//"produce-pop-up",
 					//"center-for-agroecology-farmstand",
 					//"cowell-coffee-shop",
 					//"ethnic-resource-centers-snack-pantry",
 					//"lionel-cantu-queer-center-food-pantry",
-					//"terry-freitas-cafe",
 					//"womxns-center-food-pantry"
 				].includes(currentLocation.dbName) ? (
 					<Button
@@ -122,13 +122,13 @@ const App = () => {
 							>
 								{[
 									"redwood-free-market",
+									"terry-freitas-commons",
 									//add facility names here
 									//"produce-pop-up",
 									//"center-for-agroecology-farmstand",
 									//"cowell-coffee-shop",
 									//"ethnic-resource-centers-snack-pantry",
 									//"lionel-cantu-queer-center-food-pantry",
-									//"terry-freitas-cafe",
 									//"womxns-center-food-pantry"
 								].includes(facility.dbName) ? (
 									<FoodIcon style={{ width: "30px", height: "30px" }} />

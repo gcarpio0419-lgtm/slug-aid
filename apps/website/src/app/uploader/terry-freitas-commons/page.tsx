@@ -45,7 +45,7 @@ const Home = () => {
 
 	return authorized && user ? (
 		<div className="bg-white flex justify-center items-center">
-			<ImageUploader signOut={handleLogout} location="terry-freitas-cafe"/>
+			<ImageUploader signOut={handleLogout} location="terry-freitas-commons"/>
 		</div>
 	) : (
 		<LoginScreen />
