@@ -396,6 +396,13 @@ app.post("/scan-items", authMiddleware, async (req: Request, res: Response) => {
 	}
 });
 
+function normalizeFoodName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
 //scans a PDF for item descriptions and uploads them to firebase
 app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	try {
@@ -458,19 +465,19 @@ app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: R
 			newItems.push(name);
 		}
 
-		return res.json(
+		return res.json({
 			items: newItems,
 			skipped: skippedCount,
 			message:
 				newItems.length > 0
-					? `Found ${newItems.length} new food items`
+					? `Found ${newItems.length} new food items.`
 					: "No new food items found.",
 		});
 	} catch (error) {
-		console.error(error);
-		res
-			.status(500)
-			.json({ error: "An error occurred while processing the PDF." });
+		console.error("Error scanning PDF:", error);
+		return res.status(500).json({
+			error: "An error occurred while processing the PDF.",
+		});
 	}
 });
 
