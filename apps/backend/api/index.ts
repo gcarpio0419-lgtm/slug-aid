@@ -425,6 +425,43 @@ app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: R
 
 		// Extract item descriptions using pattern matching
 		const itemDescriptions = extractItemDescriptions(lines);
+		const inventory = await adminDb.collection(location).get();
+		const seenNames = new Set<string>();
+
+		for (const document of inventory.docs) {
+			const labels: unknown = document.data().labels;
+			if (
+			  !Array.isArray(labels) ||
+			  !labels.every((label: unknown) => typeof label === "string")
+			) {
+			  throw new Error("Existing inventory has invalid labels")
+			}
+			seenNames.add(normalizeFoodName(labels.join(", ")));
+		}
+
+		const newItems: string[] = [];
+		let skippedCount = 0;
+
+		for (const description of itemDescriptions) {
+			const name = description.trim().replace(/\s+/g, " ");
+			const key = normalizeFoodName(name);
+
+			if (!key || seenNames.has(key)) {
+				skippedCount ++;
+				continue;
+			}
+			seenNames.add(key);
+			newItems.push(name);
+		}
+
+		return res.json(
+			items: newItems,
+			skipped: skippedCount,
+			message:
+				newItems.length > 0
+					? `Found ${newItems.length} new food items`
+					: "No new food items found.",
+		});
 
 		console.log("Extracted item descriptions:", itemDescriptions);
 
