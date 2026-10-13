@@ -776,9 +776,63 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 			});
 		}
 
-		await addDoc(collection(db, location), { labels: message.map((label) => label.trim()), availability });
-		console.log("Document added/updated successfully!");
-		res.status(200).json({ success: true });
+		const labels = message.map((label: string) =>
+			label.trim().replace(/\s+/g, " ")
+		);
+		
+		const nameKey = normalizeFoodName(labels.join(", "));
+		const inventoryRef = adminDb.collection(location);
+		
+		// Coordinates simultaneous additions for this facility.
+		const lockRef = adminDb
+			.collection("_inventoryImportLocks")
+			.doc(location);
+		
+		const added = await adminDb.runTransaction(async (transaction) => {
+			await transaction.get(lockRef);
+			const inventory = await transaction.get(inventoryRef);
+		
+			const duplicate = inventory.docs.some((document) => {
+				const existingLabels: unknown = document.data().labels;
+		
+				if (
+					!Array.isArray(existingLabels) ||
+					!existingLabels.every(
+						(label: unknown) => typeof label === "string"
+					)
+				) {
+					throw new Error("Existing inventory has invalid labels.");
+				}
+		
+				return (
+					normalizeFoodName(existingLabels.join(", ")) === nameKey
+				);
+			});
+		
+			if (duplicate) {
+				return false;
+			}
+		
+			transaction.set(lockRef, {
+				updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+			});
+		
+			transaction.create(inventoryRef.doc(), {
+				labels,
+				availability,
+			});
+		
+			return true;
+		});
+		
+		if (!added) {
+			return res.status(409).json({
+				success: false,
+				error: "This food item already exists in this facility.",
+			});
+		}
+		
+		return res.status(200).json({ success: true });
 	} catch (error) {
 		console.error("Error adding/updating document:", error);
 		res.status(500).json({ error: "Failed to update food" });
