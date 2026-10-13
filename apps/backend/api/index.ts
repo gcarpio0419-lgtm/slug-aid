@@ -462,19 +462,6 @@ app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: R
 					? `Found ${newItems.length} new food items`
 					: "No new food items found.",
 		});
-
-		console.log("Extracted item descriptions:", itemDescriptions);
-
-		if (itemDescriptions.length === 0) {
-			return res.status(200).json({
-				message: "No food items found in PDF.",
-				items: [],
-			});
-		}
-
-		return res.json({
-			items: itemDescriptions,
-		});
 	} catch (error) {
 		console.error(error);
 		res
