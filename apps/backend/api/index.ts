@@ -31,6 +31,8 @@ if (serviceAccountJson) {
 	console.warn("FIREBASE_SERVICE_ACCOUNT_KEY not set — auth middleware will reject all requests");
 }
 
+const adminDb = admin.firestore();
+
 // Parse allowed emails from env
 const allowedEmailsByLocation: Record<string, string[]> = {
 	"redwood-free-market": (() => {
@@ -425,7 +427,9 @@ app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: R
 
 		// Extract item descriptions using pattern matching
 		const itemDescriptions = extractItemDescriptions(lines);
+		console.log("Reading inventory for:", location);
 		const inventory = await adminDb.collection(location).get();
+		console.log("Inventory loaded:", inventory.size);
 		const seenNames = new Set<string>();
 
 		for (const document of inventory.docs) {
