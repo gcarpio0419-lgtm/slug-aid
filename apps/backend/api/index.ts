@@ -481,44 +481,61 @@ app.post("/scan-pdf-confirm/:parameter", authMiddleware, validateLocation, async
 
 function extractItemDescriptions(lines: string[]): string[] {
 	const descriptions: string[] = [];
+	let parts: string[] = [];
+	let readingDescription = false;
 
-	// Look for lines that start with item numbers (6 digits) followed by description
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-
-		// Pattern 1: Line starts with 6-digit item number (like "120019")
-		const itemNumberMatch = line.match(/^(\d{6})\s+(.+)/);
-		if (itemNumberMatch) {
-			let description = itemNumberMatch[2];
-
-			// Clean up the description by removing everything after quantity/unit info
-			description = cleanDescription(description);
-
-			if (description && description.length > 2) {
-				descriptions.push(description);
-			}
-			continue;
+	const finishItem = () => {
+		const description = parts
+			.join(" ")
+			.trim()
+	    	.replace(/\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\b.*$/, "")
+      		.replace(/^(?:SC|Veg|Bevg|SS)\s+/i, "")
+      		.replace(/\s+/g, " ")
+      		.trim();
+		if (description.length > 2) {
+			descriptions.push(description);
 		}
+		parts = [];
+	};
 
-		// Pattern 2: Multi-line format where item number is on one line and description on next
-		const standaloneItemNumber = line.match(/^\d{6}$/);
-		if (standaloneItemNumber && i + 1 < lines.length) {
-			let description = lines[i + 1];
-			description = cleanDescription(description);
-
-			if (description && description.length > 2) {
-				descriptions.push(description);
-			}
-			continue;
-		}
-	}
-
-	// If no structured format found, look for food-related keywords as fallback
-	if (descriptions.length === 0) {
-		return extractFoodItemsFallback(lines);
-	}
-
-	return descriptions;
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+	    if (!line) continue;
+	
+	    // Handles "340011Chicken..." and "340011 Chicken...".
+	    const itemStart = line.match(/^(\d{6})(?=\D|$)\s*(.*)$/);
+	    let text: string;
+	
+	    if (itemStart) {
+	      finishItem();
+	      readingDescription = true;
+	      text = itemStart[2];
+	    } else {
+	      if (!readingDescription) continue;
+	      text = line;
+	    }
+	
+	    // Stop at packaging or quantity columns, including merged
+	    // PDF text such as "150LB150.00" and "20/1 Lb40CASE...".
+	    const quantityColumn = text.search(
+	      /\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?)?\s*(?:CASE|LBS?|EACH)(?=\d|\s|$)/i
+	    );
+	
+	    if (quantityColumn !== -1) {
+	      const descriptionPart = text.slice(0, quantityColumn).trim();
+	
+	      if (descriptionPart) {
+	        parts.push(descriptionPart);
+	      }
+	
+	      readingDescription = false;
+	    } else {
+	      parts.push(text);
+	    }
+	  }
+	
+	  finishItem();
+	  return descriptions;
 }
 
 function cleanDescription(rawDescription: string): string {
