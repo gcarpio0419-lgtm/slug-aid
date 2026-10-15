@@ -117,7 +117,7 @@ export default function ImageUploader({
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
 	const [snackbarMessage, setSnackbarMessage] = useState("");
-	const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">(
+	const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error" | "warning">(
 		"success"
 	);
 
