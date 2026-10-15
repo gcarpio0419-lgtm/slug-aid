@@ -31,6 +31,8 @@ if (serviceAccountJson) {
 	console.warn("FIREBASE_SERVICE_ACCOUNT_KEY not set — auth middleware will reject all requests");
 }
 
+const adminDb = admin.firestore();
+
 // Parse allowed emails from env
 const allowedEmailsByLocation: Record<string, string[]> = {
 	"redwood-free-market": (() => {
@@ -394,6 +396,13 @@ app.post("/scan-items", authMiddleware, async (req: Request, res: Response) => {
 	}
 });
 
+function normalizeFoodName(name: string): string {
+  return name
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+}
 //scans a PDF for item descriptions and uploads them to firebase
 app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	try {
@@ -425,24 +434,50 @@ app.post("/scan-pdf/:parameter", authMiddleware, validateLocation, async (req: R
 
 		// Extract item descriptions using pattern matching
 		const itemDescriptions = extractItemDescriptions(lines);
+		console.log("Reading inventory for:", location);
+		const inventory = await adminDb.collection(location).get();
+		console.log("Inventory loaded:", inventory.size);
+		const seenNames = new Set<string>();
 
-		console.log("Extracted item descriptions:", itemDescriptions);
+		for (const document of inventory.docs) {
+			const labels: unknown = document.data().labels;
+			if (
+			  !Array.isArray(labels) ||
+			  !labels.every((label: unknown) => typeof label === "string")
+			) {
+			  throw new Error("Existing inventory has invalid labels")
+			}
+			seenNames.add(normalizeFoodName(labels.join(", ")));
+		}
 
-		if (itemDescriptions.length === 0) {
-			return res.status(200).json({
-				message: "No food items found in PDF.",
-				items: [],
-			});
+		const newItems: string[] = [];
+		let skippedCount = 0;
+
+		for (const description of itemDescriptions) {
+			const name = description.trim().replace(/\s+/g, " ");
+			const key = normalizeFoodName(name);
+
+			if (!key || seenNames.has(key)) {
+				skippedCount ++;
+				continue;
+			}
+			seenNames.add(key);
+			newItems.push(name);
 		}
 
 		return res.json({
-			items: itemDescriptions,
+			items: newItems,
+			skipped: skippedCount,
+			message:
+				newItems.length > 0
+					? `Found ${newItems.length} new food items.`
+					: "No new food items found.",
 		});
 	} catch (error) {
-		console.error(error);
-		res
-			.status(500)
-			.json({ error: "An error occurred while processing the PDF." });
+		console.error("Error scanning PDF:", error);
+		return res.status(500).json({
+			error: "An error occurred while processing the PDF.",
+		});
 	}
 });
 
@@ -481,44 +516,61 @@ app.post("/scan-pdf-confirm/:parameter", authMiddleware, validateLocation, async
 
 function extractItemDescriptions(lines: string[]): string[] {
 	const descriptions: string[] = [];
+	let parts: string[] = [];
+	let readingDescription = false;
 
-	// Look for lines that start with item numbers (6 digits) followed by description
-	for (let i = 0; i < lines.length; i++) {
-		const line = lines[i];
-
-		// Pattern 1: Line starts with 6-digit item number (like "120019")
-		const itemNumberMatch = line.match(/^(\d{6})\s+(.+)/);
-		if (itemNumberMatch) {
-			let description = itemNumberMatch[2];
-
-			// Clean up the description by removing everything after quantity/unit info
-			description = cleanDescription(description);
-
-			if (description && description.length > 2) {
-				descriptions.push(description);
-			}
-			continue;
+	const finishItem = () => {
+		const description = parts
+			.join(" ")
+			.trim()
+	    	.replace(/\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?\b.*$/, "")
+      		.replace(/^(?:SC|Veg|Bevg|SS)\s+/i, "")
+      		.replace(/\s+/g, " ")
+      		.trim();
+		if (description.length > 2) {
+			descriptions.push(description);
 		}
+		parts = [];
+	};
 
-		// Pattern 2: Multi-line format where item number is on one line and description on next
-		const standaloneItemNumber = line.match(/^\d{6}$/);
-		if (standaloneItemNumber && i + 1 < lines.length) {
-			let description = lines[i + 1];
-			description = cleanDescription(description);
-
-			if (description && description.length > 2) {
-				descriptions.push(description);
-			}
-			continue;
-		}
-	}
-
-	// If no structured format found, look for food-related keywords as fallback
-	if (descriptions.length === 0) {
-		return extractFoodItemsFallback(lines);
-	}
-
-	return descriptions;
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+	    if (!line) continue;
+	
+	    // Handles "340011Chicken..." and "340011 Chicken...".
+	    const itemStart = line.match(/^(\d{6})(?=\D|$)\s*(.*)$/);
+	    let text: string;
+	
+	    if (itemStart) {
+	      finishItem();
+	      readingDescription = true;
+	      text = itemStart[2];
+	    } else {
+	      if (!readingDescription) continue;
+	      text = line;
+	    }
+	
+	    // Stop at packaging or quantity columns, including merged
+	    // PDF text such as "150LB150.00" and "20/1 Lb40CASE...".
+	    const quantityColumn = text.search(
+	      /\b\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?|\d+(?:\.\d+)?(?:\s+\d+(?:\.\d+)?)?\s*(?:CASE|LBS?|EACH)(?=\d|\s|$)/i
+	    );
+	
+	    if (quantityColumn !== -1) {
+	      const descriptionPart = text.slice(0, quantityColumn).trim();
+	
+	      if (descriptionPart) {
+	        parts.push(descriptionPart);
+	      }
+	
+	      readingDescription = false;
+	    } else {
+	      parts.push(text);
+	    }
+	  }
+	
+	  finishItem();
+	  return descriptions;
 }
 
 function cleanDescription(rawDescription: string): string {
@@ -724,9 +776,63 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 			});
 		}
 
-		await addDoc(collection(db, location), { labels: message.map((label) => label.trim()), availability });
-		console.log("Document added/updated successfully!");
-		res.status(200).json({ success: true });
+		const labels = message.map((label: string) =>
+			label.trim().replace(/\s+/g, " ")
+		);
+		
+		const nameKey = normalizeFoodName(labels.join(", "));
+		const inventoryRef = adminDb.collection(location);
+		
+		// Coordinates simultaneous additions for this facility.
+		const lockRef = adminDb
+			.collection("_inventoryImportLocks")
+			.doc(location);
+		
+		const added = await adminDb.runTransaction(async (transaction) => {
+			await transaction.get(lockRef);
+			const inventory = await transaction.get(inventoryRef);
+		
+			const duplicate = inventory.docs.some((document) => {
+				const existingLabels: unknown = document.data().labels;
+		
+				if (
+					!Array.isArray(existingLabels) ||
+					!existingLabels.every(
+						(label: unknown) => typeof label === "string"
+					)
+				) {
+					throw new Error("Existing inventory has invalid labels.");
+				}
+		
+				return (
+					normalizeFoodName(existingLabels.join(", ")) === nameKey
+				);
+			});
+		
+			if (duplicate) {
+				return false;
+			}
+		
+			transaction.set(lockRef, {
+				updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+			});
+		
+			transaction.create(inventoryRef.doc(), {
+				labels,
+				availability,
+			});
+		
+			return true;
+		});
+		
+		if (!added) {
+			return res.status(409).json({
+				success: false,
+				error: "This food item already exists in this facility.",
+			});
+		}
+		
+		return res.status(200).json({ success: true });
 	} catch (error) {
 		console.error("Error adding/updating document:", error);
 		res.status(500).json({ error: "Failed to update food" });
