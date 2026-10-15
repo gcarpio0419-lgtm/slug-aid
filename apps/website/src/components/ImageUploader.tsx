@@ -69,29 +69,30 @@ async function updateFood({
 	location: string;
 	availability: Availability;
 }) {
-	try {
-		const token = await getAuthToken();
-		const response = await fetch(
-			`${process.env.NEXT_PUBLIC_API_URL}/update-food/${location}`,
-			{
-				method: "PUT",
-				headers: {
-					"Content-Type": "application/json",
-					...(token && { Authorization: `Bearer ${token}` }),
-				},
-				body: JSON.stringify({ message, availability, }),
-			}
-		);
+	const token = await getAuthToken();
 
-		if (!response.ok) {
-			throw new Error(`Error: ${response.statusText}`);
+	const response = await fetch(
+		`${process.env.NEXT_PUBLIC_API_URL}/update-food/${encodeURIComponent(location)}`,
+		{
+			method: "PUT",
+			headers: {
+				"Content-Type": "application/json",
+				...(token && { Authorization: `Bearer ${token}` }),
+			},
+			body: JSON.stringify({ message, availability }),
 		}
+	);
 
-		const data = await response.json();
-		return data;
-	} catch (error) {
-		console.error("Error updating food:", error);
+	const data = await response.json();
+
+	if (!response.ok) {
+		throw Object.assign(
+			new Error(data.error || "Failed to update food."),
+			{ status: response.status }
+		);
 	}
+
+	return data;
 }
 
 interface ImageUploaderProps {
@@ -594,8 +595,19 @@ export default function ImageUploader({
 							console.log(foodArray);
 
 							// Upload each food item individually
-							let successCount = 0;
-							let errorCount = 0;
+							// let successCount = 0;
+							// let errorCount = 0;
+							if (food.Array.length === 0) {
+								setSnackbarMessage("Enter a food item first.");
+								setSnackbarSeverity("warning");
+								setSnackbarOpen(true);
+								return;
+							}
+							setActionLoading(true);
+
+							const added: string[] = [];
+							const duplicates: string[] = [];
+							const failed: string[] = [];
 
 							for (const foodItem of foodArray) {
 								try {
@@ -604,33 +616,64 @@ export default function ImageUploader({
 										location: location,
 										availability: foodAvailability,
 									});
-									if (result) {
-										successCount++;
+									if (result?.success === true) {
+										added.push(foodItem);
 									} else {
-										errorCount++;
+										failed.push(foodItem);
 									}
 								} catch (error) {
-									console.error(`Error uploading ${foodItem}:`, error);
-									errorCount++;
+									if (
+										error instanceof Error &&
+										"status" in error &&
+										error.status === 409
+									) {
+										duplicates.push(foodItem);
+									} else {
+										console.error(`Error adding ${foodItem}:`, error);
+										failed.push(foodItem);
+									}
 								}
 							}
 
-							if (successCount > 0) {
-								setFoodText("");
+							setFoodText(failed.join(", "));
+
+							if(failed.length ===) {
 								setFoodAvailability("in_stock");
-								setSnackbarMessage(
-									`Food updated successfully! ${successCount} items added${errorCount > 0 ? `, ${errorCount} failed` : ""}`
-								);
-								setSnackbarSeverity("success");
-								setSnackbarOpen(true);
-								await fetchFoodList(); // Refresh food list after update
-							} else {
-								setSnackbarMessage("Failed to update food items");
-								setSnackbarSeverity("error");
-								setSnackbarOpen(true);
+							}
+							const messages: string[] = [];
+
+							if (added.length > 0) {
+								messages.push(`Added: ${added.join(", ")}.`);
 							}
 
-							setActionLoading(false); // End loading
+							if (duplicates.length > 0) {
+								messages.push(`Already listed: ${duplicates.join(", ")}.`);
+							}
+							if (failed.length > 0) {
+								messages.push(`Could not add: ${failed.join(", ")}.`);
+							}
+					
+							if (added.length > 0 || duplicates.length > 0) {
+								try {
+									await fetchFoodList();
+								} catch (error) {
+									console.error("Error refreshing inventory:", error);
+									messages.push("Refresh the page to see current inventory.");
+								}
+							}
+					
+							setSnackbarMessage(messages.join(" "));
+							setSnackbarSeverity(
+								failed.length > 0
+									? "error"
+										: duplicates.length > 0
+											? "warning"
+											: "success"
+								);
+								setSnackbarOpen(true);
+							} finally {
+								setActionLoading(false);
+							}
 						}}
 						fullWidth
 						disabled={actionLoading}
