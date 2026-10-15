@@ -637,7 +637,7 @@ export default function ImageUploader({
 
 							setFoodText(failed.join(", "));
 
-							if(failed.length ===) {
+							if(failed.length === 0) {
 								setFoodAvailability("in_stock");
 							}
 							const messages: string[] = [];
