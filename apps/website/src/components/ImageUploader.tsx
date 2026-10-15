@@ -587,7 +587,6 @@ export default function ImageUploader({
 						variant="contained"
 						color="success"
 						onClick={async () => {
-							setActionLoading(true); // Start loading
 							const foodArray = foodText
 								.split(",")
 								.map((f) => f.trim())
@@ -597,7 +596,7 @@ export default function ImageUploader({
 							// Upload each food item individually
 							// let successCount = 0;
 							// let errorCount = 0;
-							if (food.Array.length === 0) {
+							if (foodArray.length === 0) {
 								setSnackbarMessage("Enter a food item first.");
 								setSnackbarSeverity("warning");
 								setSnackbarOpen(true);
@@ -608,83 +607,83 @@ export default function ImageUploader({
 							const added: string[] = [];
 							const duplicates: string[] = [];
 							const failed: string[] = [];
-
-							for (const foodItem of foodArray) {
-								try {
-									const result = await updateFood({
-										message: [foodItem], // Send as single item array
-										location: location,
-										availability: foodAvailability,
-									});
-									if (result?.success === true) {
-										added.push(foodItem);
-									} else {
-										failed.push(foodItem);
-									}
-								} catch (error) {
-									if (
-										error instanceof Error &&
-										"status" in error &&
-										error.status === 409
-									) {
-										duplicates.push(foodItem);
-									} else {
-										console.error(`Error adding ${foodItem}:`, error);
-										failed.push(foodItem);
+							try {
+								for (const foodItem of foodArray) {
+									try {
+										const result = await updateFood({
+											message: [foodItem], // Send as single item array
+											location: location,
+											availability: foodAvailability,
+										});
+										if (result?.success === true) {
+											added.push(foodItem);
+										} else {
+											failed.push(foodItem);
+										}
+									} catch (error) {
+										if (
+											error instanceof Error &&
+											"status" in error &&
+											error.status === 409
+										) {
+											duplicates.push(foodItem);
+										} else {
+											console.error(`Error adding ${foodItem}:`, error);
+											failed.push(foodItem);
+										}
 									}
 								}
-							}
-
-							setFoodText(failed.join(", "));
-
-							if(failed.length === 0) {
-								setFoodAvailability("in_stock");
-							}
-							const messages: string[] = [];
-
-							if (added.length > 0) {
-								messages.push(`Added: ${added.join(", ")}.`);
-							}
-
-							if (duplicates.length > 0) {
-								messages.push(`Already listed: ${duplicates.join(", ")}.`);
-							}
-							if (failed.length > 0) {
-								messages.push(`Could not add: ${failed.join(", ")}.`);
-							}
-					
-							if (added.length > 0 || duplicates.length > 0) {
-								try {
-									await fetchFoodList();
-								} catch (error) {
-									console.error("Error refreshing inventory:", error);
-									messages.push("Refresh the page to see current inventory.");
+	
+								setFoodText(failed.join(", "));
+	
+								if(failed.length === 0) {
+									setFoodAvailability("in_stock");
 								}
-							}
-					
-							setSnackbarMessage(messages.join(" "));
-							setSnackbarSeverity(
-								failed.length > 0
-									? "error"
-										: duplicates.length > 0
-											? "warning"
-											: "success"
-								);
-								setSnackbarOpen(true);
-							} finally {
-								setActionLoading(false);
-							}
-						}}
-						fullWidth
-						disabled={actionLoading}
-						sx={{ marginTop: 2 }}
-					>
-						{actionLoading ? (
-							<CircularProgress size={24} color="inherit" />
-						) : (
-							"Update Food"
-						)}
-					</Button>
+								const messages: string[] = [];
+	
+								if (added.length > 0) {
+									messages.push(`Added: ${added.join(", ")}.`);
+								}
+	
+								if (duplicates.length > 0) {
+									messages.push(`Already listed: ${duplicates.join(", ")}.`);
+								}
+								if (failed.length > 0) {
+									messages.push(`Could not add: ${failed.join(", ")}.`);
+								}
+						
+								if (added.length > 0 || duplicates.length > 0) {
+									try {
+										await fetchFoodList();
+									} catch (error) {
+										console.error("Error refreshing inventory:", error);
+										messages.push("Refresh the page to see current inventory.");
+									}
+								}
+						
+								setSnackbarMessage(messages.join(" "));
+								setSnackbarSeverity(
+									failed.length > 0
+										? "error"
+											: duplicates.length > 0
+												? "warning"
+												: "success"
+									);
+									setSnackbarOpen(true);
+								} finally {
+									setActionLoading(false);
+								}
+							}}
+							fullWidth
+							disabled={actionLoading}
+							sx={{ marginTop: 2 }}
+						>
+							{actionLoading ? (
+								<CircularProgress size={24} color="inherit" />
+							) : (
+								"Update Food"
+							)}
+						</Button>
 
 					{/* PDF Upload Section */}
 					<TextField
