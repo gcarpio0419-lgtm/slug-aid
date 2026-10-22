@@ -20,6 +20,7 @@ interface imageData {
 
 interface FoodData {
 	food: FoodItem[];
+	lastUpdated?: string | null;
 }
 
 interface statusData {
@@ -43,6 +44,7 @@ export default function LocationTemplate({ config }: Config) {
 	const [foodList, setFoodList] = useState<FoodItem[]>([]);
 	const [foodImages, setFoodImages] = useState<string[]>([]);
 	const [status, setStatus] = useState<{ message: string; timestamp: string } | null>(null);
+	const [inventoryLastUpdated, setInventoryLastUpdated] = useState<string | null>(null);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -57,6 +59,7 @@ export default function LocationTemplate({ config }: Config) {
 				console.log(data.food);
 
 				setFoodList(data.food);
+				setInventoryLastUpdated(data.lastUpdated ?? null);
 			} catch (error) {
 				console.error("Error fetching food:", error);
 			}
@@ -178,6 +181,26 @@ export default function LocationTemplate({ config }: Config) {
 					<h2 className="text-slugBlue text-3xl font-bold pb-2">
 						Product Inventory
 					</h2>
+					<p className="text-sm text-gray-600 mb-4">
+						{inventoryLastUpdated ? (
+							<>
+								Inventory last updated:{" "}
+								<time dateTime={inventoryLastUpdated}>
+									{new Date(inventoryLastUpdated).toLocaleString("en-US", {
+										timeZone: "America/Los_Angeles",
+										month: "short",
+										day: "numeric",
+										year: "numeric",
+										hour: "numeric",
+										minute: "2-digit",
+										timeZoneName: "short",
+									})}
+								</time>
+							</>
+						) : (
+							"Last updated unavailable"
+						)}
+					</p>
 					<div className="text-slugSecondaryBlue font-semibold text-2xl grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
 						{/* Passes each item's availability to its colored status badge with a legacy-data fallback. */}
 						{foodList

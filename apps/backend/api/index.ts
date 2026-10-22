@@ -32,6 +32,15 @@ if (serviceAccountJson) {
 }
 
 const adminDb = admin.firestore();
+function inventoryMetadataRef(location: string) {
+	return adminDb.collection("inventoryMetadata").doc(location);
+}
+
+function inventoryTimestamp() {
+	return {
+		updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+	};
+}
 
 // Parse allowed emails from env
 const allowedEmailsByLocation: Record<string, string[]> = {
@@ -211,14 +220,65 @@ let images: { [key: string]: string[] } = {};
 let status: { [key: string]: { message: string; timestamp: string } } = {};
 
 //uploads food labels to firebase
-async function uploadLabels(location: string, labels: string[], availability: Availability = "in_stock") {
-	console.log(location);
-	try {
-		await addDoc(collection(db, location), { labels: labels, availability });
-		console.log("Document added successfully!");
-	} catch (error) {
-		console.error("Error adding document:", error);
+async function uploadLabels(
+	location: string,
+	labels: string[],
+	availability: Availability = "in_stock"
+): Promise<boolean> {
+	const cleanedLabels = labels
+		.map((label) => label.trim().replace(/\s+/g, " "))
+		.filter(Boolean);
+
+	if (cleanedLabels.length === 0) {
+		return false;
 	}
+
+	const nameKey = normalizeFoodName(cleanedLabels.join(", "));
+	const inventoryRef = adminDb.collection(location);
+	const lockRef = adminDb
+		.collection("_inventoryImportLocks")
+		.doc(location);
+
+	return adminDb.runTransaction(async (transaction) => {
+		await transaction.get(lockRef);
+		const inventory = await transaction.get(inventoryRef);
+
+		const duplicate = inventory.docs.some((document) => {
+			const existingLabels: unknown = document.data().labels;
+
+			if (
+				!Array.isArray(existingLabels) ||
+				!existingLabels.every(
+					(label: unknown) => typeof label === "string"
+				)
+			) {
+				throw new Error("Existing inventory has invalid labels.");
+			}
+
+			return (
+				normalizeFoodName(existingLabels.join(", ")) === nameKey
+			);
+		});
+
+		if (duplicate) {
+			return false;
+		}
+
+		transaction.create(inventoryRef.doc(), {
+			labels: cleanedLabels,
+			availability,
+		});
+
+		transaction.set(lockRef, inventoryTimestamp());
+
+		transaction.set(
+			inventoryMetadataRef(location),
+			inventoryTimestamp(),
+			{ merge: true }
+		);
+
+		return true;
+	});
 }
 
 //fetches the image list (urls) of any given location from firebase
@@ -294,18 +354,56 @@ app.get("/images/:parameter", async (req: Request, res: Response) => {
 });
 
 //gives a list of the food curently available at any given location
-app.get("/food/:parameter", async (req: Request, res: Response) => {
-	const location = req.params.parameter;
-	if (location in food) {
-		res.json({ food: food[location] });
-		return;
+app.get(
+	"/food/:parameter",
+	validateLocation,
+	async (req: Request, res: Response) => {
+		try {
+			const location = req.params.parameter;
+
+			const result = await adminDb.runTransaction(
+				async (transaction) => {
+					const inventory = await transaction.get(
+						adminDb.collection(location)
+					);
+
+					const metadata = await transaction.get(
+						inventoryMetadataRef(location)
+					);
+
+					const updatedAt = metadata.data()?.updatedAt;
+
+					return {
+						food: inventory.docs.map((document) => {
+							const data = document.data();
+
+							return {
+								id: document.id,
+								labels: Array.isArray(data.labels)
+									? data.labels
+									: [],
+								availability: data.availability ?? "in_stock",
+							};
+						}),
+						lastUpdated:
+							updatedAt instanceof admin.firestore.Timestamp
+								? updatedAt.toDate().toISOString()
+								: null,
+					};
+				}
+			);
+
+			res.setHeader("Cache-Control", "no-store");
+			return res.json(result);
+		} catch (error) {
+			console.error("Error loading inventory:", error);
+
+			return res.status(500).json({
+				error: "Failed to load inventory.",
+			});
+		}
 	}
-
-	const data = await fetchFoodWithIds(location);
-
-	food[location] = data;
-	res.json({ food: data });
-});
+);
 
 //gives a list of the food with ids for a given location
 app.get("/food-ids/:parameter", async (req: Request, res: Response) => {
@@ -379,7 +477,7 @@ app.post("/scan-items", authMiddleware, async (req: Request, res: Response) => {
 		const [result] = await client.objectLocalization(url);
 		const labels = result.localizedObjectAnnotations;
 		// Send the response with the detected labels
-		uploadLabels(location, [
+		await uploadLabels(location, [
 			...new Set(labels.map((item: any) => item.name)),
 		] as string[]);
 
@@ -498,15 +596,22 @@ app.post("/scan-pdf-confirm/:parameter", authMiddleware, validateLocation, async
 			return res.status(400).json({ error: "No valid items to upload." });
 		}
 
+		const addedItems: string[] = [];
+
 		for (const item of cleanedItems) {
-			await uploadLabels(location, [item]);
+			const added = await uploadLabels(location, [item]);
+
+			if (added) {
+				addedItems.push(item);
+			}
 		}
 
 		food[location] = await fetchFoodWithIds(location);
 
 		return res.status(200).json({
-			uploaded: cleanedItems.length,
-			items: cleanedItems,
+			uploaded: addedItems.length,
+			skipped: cleanedItems.length - addedItems.length,
+			items: addedItems,
 		});
 	} catch (error) {
 		console.error("Error confirming PDF items:", error);
@@ -821,6 +926,12 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 				labels,
 				availability,
 			});
+
+			transaction.set(
+				inventoryMetadataRef(location),
+				inventoryTimestamp(),
+				{merge: true}
+			);
 		
 			return true;
 		});
@@ -857,20 +968,39 @@ app.patch("/food/:location/:id/availability", authMiddleware, validateLocation, 
 					error: "Invalid availability value.",
 				});
 			}
-			const foodReference = doc(db, location, id);
-			//prevents an uodated from accidentally creating a nonexistent food item
-			const existingFood = await getDoc(foodReference);
-			if (!existingFood.exists()) {
-				return res.status(404).json({
-					error: "Food item not found.",
-				});
+		const foodReference = adminDb.collection(location).doc(id);
+
+		const found = await adminDb.runTransaction(async (transaction) => {
+			const existingFood = await transaction.get(foodReference);
+
+			if (!existingFood.exists) {
+				return false;
 			}
-			//merges the new availability into the document without replacing its existing labels
-			await setDoc(
-				foodReference,
-				{ availability },
+
+			// Saving the same availability isn't an inventory change.
+			const currentAvailability =
+				existingFood.data()?.availability ?? "in_stock";
+
+			if (currentAvailability === availability) {
+				return true;
+			}
+
+			transaction.update(foodReference, { availability });
+
+			transaction.set(
+				inventoryMetadataRef(location),
+				inventoryTimestamp(),
 				{ merge: true }
 			);
+
+			return true;
+		});
+
+		if (!found) {
+			return res.status(404).json({
+				error: "Food item not found.",
+			});
+		}
 
 			return res.status(200).json({
 				success: true,
@@ -891,7 +1021,24 @@ app.patch("/food/:location/:id/availability", authMiddleware, validateLocation, 
 app.delete("/food/:location/:id", authMiddleware, validateLocation, async (req: Request, res: Response) => {
 	const { location, id } = req.params;
 	try {
-		await deleteDoc(doc(db, location, id));
+		const foodReference = adminDb.collection(location).doc(id);
+
+		await adminDb.runTransaction(async (transaction) => {
+			const existingFood = await transaction.get(foodReference);
+
+			// Deleting an already-missing item doesn't advance the timestamp.
+			if (!existingFood.exists) {
+				return;
+			}
+
+			transaction.delete(foodReference);
+
+			transaction.set(
+				inventoryMetadataRef(location),
+				inventoryTimestamp(),
+				{ merge: true }
+			);
+		});
 		res.status(200).json({ success: true });
 	} catch (error) {
 		console.error("Error deleting food document:", error);
