@@ -143,6 +143,15 @@ const fireApp = initializeApp(firebaseConfig);
 const storage = getStorage(fireApp);
 const db = getFirestore(fireApp);
 
+const VALID_CATEGORIES = new Set<FoodCategory>([
+	"produce",
+	"non-perishables",
+	"refrigerated",
+	"frozen",
+	"bakery",
+	"other",
+])
+
 // Provides runtime validation for the three inventory statuses accepted from API requests
 const VALID_AVAILABILITY = new Set<Availability>([
 	"in_stock",
@@ -209,11 +218,14 @@ function validateLocation(req: Request, res: Response, next: NextFunction) {
 //retricts availabilty to 3 statuses by the application
 type Availability = "in_stock" | "running_out" | "out_of_stock";
 
+type FoodCategory = "produce" | "non-perishables" | "refrigerated" | "frozen" | "bakery" | "other";
+
 //describes firestore food record with its doc ID, labels, and availability
 interface FoodItem {
 	id:string;
 	labels: string[];
 	availability: Availability;
+	category: FoodCategory;
 }
 let food: Record<string,FoodItem[]> = {};
 let images: { [key: string]: string[] } = {};
@@ -304,6 +316,7 @@ async function fetchFoodWithIds(location: string): Promise<FoodItem[]> {
 			id: foodDoc.id,
 			labels: Array.isArray(data.labels) ? data.labels : [],
 			availability: data.availability ?? "in_stock",
+			category: data.category ?? "other",
 		});
 	});
 	return foodArr;
@@ -383,6 +396,7 @@ app.get(
 									? data.labels
 									: [],
 								availability: data.availability ?? "in_stock",
+								category: data.category ?? "other",
 							};
 						}),
 						lastUpdated:
@@ -848,9 +862,11 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 		const { 
 			message,
 			availability = "in_stock", 
+			category = "other",
 		}: {
 			message?: unknown;
 			availability?: unknown;
+			category?: unknown;
 		} = req.body;
 		console.log(message);
 		const location = req.params.parameter;
@@ -879,6 +895,17 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 			return res.status(400).json({
 				error: "Invalid availability value.",
 			});
+		}
+
+		if (
+			typeof category !== "string" ||
+			!VALID_CATEGORIES.has(
+				category as FoodCategory
+			)
+		) {
+			return res.status(400).json({
+				error: "Invalid food category."
+			})
 		}
 
 		const labels = message.map((label: string) =>
@@ -925,6 +952,7 @@ app.put("/update-food/:parameter", authMiddleware, validateLocation, async (req:
 			transaction.create(inventoryRef.doc(), {
 				labels,
 				availability,
+				category
 			});
 
 			transaction.set(
@@ -1012,6 +1040,72 @@ app.patch("/food/:location/:id/availability", authMiddleware, validateLocation, 
 
 			return res.status(500).json({
 				error: "Failed to update food availability.",
+			});
+		}
+	}
+);
+
+app.patch("/food/:location/:id/category", authMiddleware, validateLocation, async (req: Request, res: Response) => {
+	try {
+			const { location, id } = req.params;
+			const {
+				category,
+			}: {
+				category?: unknown;
+			} = req.body;
+
+			if (
+				typeof category !== "string" || !VALID_CATEGORIES.has(category as FoodCategory
+				)
+			) {
+				return res.status(400).json({
+					error: "Invalid food category.",
+				});
+			}
+		const foodReference = adminDb.collection(location).doc(id);
+
+		const found = await adminDb.runTransaction(async (transaction) => {
+			const existingFood = await transaction.get(foodReference);
+
+			if (!existingFood.exists) {
+				return false;
+			}
+
+			// Saving the same category isn't an inventory change.
+			const currentCategory =
+				existingFood.data()?.category ?? "other";
+
+			if (currentCategory === category) {
+				return true;
+			}
+
+			transaction.update(foodReference, { category });
+
+			transaction.set(
+				inventoryMetadataRef(location),
+				inventoryTimestamp(),
+				{ merge: true }
+			);
+
+			return true;
+		});
+
+		if (!found) {
+			return res.status(404).json({
+				error: "Food item not found.",
+			});
+		}
+
+			return res.status(200).json({
+				success: true,
+				id,
+				category,
+			});
+		} catch (error) {
+			console.error("Error updating food category:", error);
+
+			return res.status(500).json({
+				error: "Failed to update food category.",
 			});
 		}
 	}
