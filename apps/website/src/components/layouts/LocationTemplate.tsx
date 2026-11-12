@@ -56,9 +56,6 @@ export default function LocationTemplate({ config }: Config) {
 	const [foodImages, setFoodImages] = useState<string[]>([]);
 	const [status, setStatus] = useState<{ message: string; timestamp: string } | null>(null);
 	const [inventoryLastUpdated, setInventoryLastUpdated] = useState<string | null>(null);
-	const produceItems = foodList.filter(
-		(food) => food.category === "produce"
-	);
 
 	useEffect(() => {
 		const fetchData = async () => {
@@ -115,10 +112,22 @@ export default function LocationTemplate({ config }: Config) {
 			}
 		};
 
+		const handleVisibilityChange = () =>  {
+			if (document.visibilityState === "visible") {
+				fetchData();
+			}
+		};
+
+		document.addEventListener("visibilitychange",handleVisibilityChange);
+
 		fetchImages();
 		fetchData();
 		fetchStatus();
-	}, [config.dbName]);
+		return () => {
+			document.removeEventListener("visibilitychange",handleVisibilityChange);
+		};
+	}, 
+	[config.dbName]);
 
 	function ImageCard({ src }: { src: string }) {
 		const [imageOpen, setImageOpen] = useState(false);

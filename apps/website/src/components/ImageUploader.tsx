@@ -113,6 +113,128 @@ interface ImageUploaderProps {
 	location: string;
 }
 
+type FoodEntryFormProps = {
+	onSubmitFood: (text: string) => Promise<string>;
+	isSubmitting: boolean;
+	foodCategory: FoodCategory;
+	onCategoryChange: (value: FoodCategory) => void;
+	foodAvailability: Availability;
+	onAvailabilityChange: (value: Availability) => void;
+}
+
+function FoodEntryForm({
+	onSubmitFood,
+	isSubmitting,
+	foodCategory,
+	onCategoryChange,
+	foodAvailability,
+	onAvailabilityChange,
+}: FoodEntryFormProps) {
+	const [foodText, setFoodText] = useState<string>("");
+
+	const handleSubmit = async() => {
+		const remainingText = await onSubmitFood(foodText);
+		setFoodText(remainingText);
+	}
+	return (
+		<>
+			<TextField
+				label="Update Food (comma separated)"
+				fullWidth
+				value={foodText}
+				onChange={(e) => setFoodText(e.target.value)}
+				margin="normal"
+				variant="outlined"
+				disabled={isSubmitting}
+			/>
+			<FormControl fullWidth margin="normal" disabled={isSubmitting}>
+				<InputLabel id="food-category-label">
+					Food Category
+				</InputLabel>
+
+				<Select
+					labelId="food-category-label"
+					value={foodCategory}
+					label="Food Category"
+					onChange={(event) =>
+						onCategoryChange(
+							event.target.value as FoodCategory
+						)
+					}
+				>
+					<MenuItem value="produce">
+						PRODUCE
+					</MenuItem>
+
+					<MenuItem value="non-perishables">
+						NON-PERISHABLES
+					</MenuItem>
+
+					<MenuItem value="refrigerated">
+						REFRIGERATED
+					</MenuItem>
+
+					<MenuItem value="frozen">
+						FROZEN
+					</MenuItem>
+
+					<MenuItem value="bakery">
+						BAKERY
+					</MenuItem>
+
+					<MenuItem value="other">
+						OTHER
+					</MenuItem>
+				</Select>
+			</FormControl>
+
+			<FormControl fullWidth margin="normal" disabled={isSubmitting}>
+				<InputLabel id="food-availability-label">
+					Availability
+				</InputLabel>
+
+				<Select
+					labelId="food-availability-label"
+					value={foodAvailability}
+					label="Availability"
+					onChange={(event) =>
+						onAvailabilityChange(
+							event.target.value as Availability
+						)
+					}
+				>
+					<MenuItem value="in_stock">
+						IN STOCK
+					</MenuItem>
+
+					<MenuItem value="running_out">
+						RUNNING OUT
+					</MenuItem>
+
+					<MenuItem value="out_of_stock">
+						OUT OF STOCK
+					</MenuItem>
+				</Select>
+			</FormControl>
+
+			<Button
+				variant="contained"
+				color="success"
+				onClick={handleSubmit}
+				fullWidth
+				disabled={isSubmitting}
+				sx={{ marginTop: 2 }}
+			>
+				{isSubmitting ? (
+					<CircularProgress size={24} color="inherit" />
+				) : (
+					"Update Food"
+				)}
+			</Button>
+		</>
+	);
+}
+
 export default function ImageUploader({ 
 	signOut, 
 	location,
@@ -123,10 +245,10 @@ export default function ImageUploader({
 	const [actionLoading, setActionLoading] = useState<boolean>(false); // New loading state
 	const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string>("");
-	const [foodText, setFoodText] = useState<string>("");
 	const [foodAvailability, setFoodAvailability] = useState<Availability>("in_stock");
 	const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>("all");
 	const [foodCategory, setFoodCategory] = useState<FoodCategory>("other");
+	const [isSavingCategory, setIsSavingCategory] = useState<boolean>(false);
 
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -169,7 +291,7 @@ export default function ImageUploader({
 		setFoodLoading(true);
 		try {
 			const response = await fetch(
-				`${process.env.NEXT_PUBLIC_API_URL}/food-ids/${loc}`
+				`${process.env.NEXT_PUBLIC_API_URL}/food-ids/${loc}`, {cache: "no-store"}
 			);
 			if (response.ok) {
 				const data = await response.json();
@@ -250,9 +372,10 @@ export default function ImageUploader({
 	id: string,
 	category: FoodCategory
 	) => {
+		if (isSavingCategory) {return};
+		setIsSavingCategory(true);
 		try {
 			const token = await getAuthToken();
-
 			const response = await fetch(
 				`${process.env.NEXT_PUBLIC_API_URL}/food/${location}/${id}/category`,
 				{
@@ -296,6 +419,8 @@ export default function ImageUploader({
 			setSnackbarMessage("Failed to update category.");
 			setSnackbarSeverity("error");
 			setSnackbarOpen(true);
+		} finally {
+			setIsSavingCategory(false);
 		}
 	};
 
@@ -507,6 +632,91 @@ export default function ImageUploader({
 		setSnackbarOpen(true);
 	}
 
+	const handleSubmitFood = async (text: string) => {
+		const foodArray = text
+		.split(",")
+		.map((f) => f.trim())
+		.filter(Boolean);
+
+		if (foodArray.length === 0) {
+			setSnackbarMessage("Enter a food item first.");
+			setSnackbarSeverity("warning");
+			setSnackbarOpen(true);
+			return text;
+		}
+		setActionLoading(true);
+
+		const added: string[] = [];
+		const duplicates: string[] = [];
+		const failed: string[] = [];
+		try {
+			for (const foodItem of foodArray) {
+				try {
+					const result = await updateFood({
+						message: [foodItem], // Send as single item array
+						location: location,
+						availability: foodAvailability,
+						category: foodCategory,
+					});
+					if (result?.success === true) {
+						added.push(foodItem);
+					} else {
+						failed.push(foodItem);
+					}
+				} catch (error) {
+					if (
+						error instanceof Error &&
+						"status" in error &&
+						error.status === 409
+					) {
+						duplicates.push(foodItem);
+					} else {
+						console.error(`Error adding ${foodItem}:`, error);
+						failed.push(foodItem);
+					}
+				}
+			}
+
+			if(failed.length === 0) {
+				setFoodAvailability("in_stock");
+			}
+			const messages: string[] = [];
+
+			if (added.length > 0) {
+				messages.push(`Added: ${added.join(", ")}.`);
+			}
+
+			if (duplicates.length > 0) {
+				messages.push(`Already listed: ${duplicates.join(", ")}.`);
+			}
+			if (failed.length > 0) {
+				messages.push(`Could not add: ${failed.join(", ")}.`);
+			}
+
+			if (added.length > 0 || duplicates.length > 0) {
+				try {
+					await fetchFoodList();
+				} catch (error) {
+					console.error("Error refreshing inventory:", error);
+					messages.push("Refresh the page to see current inventory.");
+				}
+			}
+
+			setSnackbarMessage(messages.join(" "));
+			setSnackbarSeverity(
+				failed.length > 0
+					? "error"
+						: duplicates.length > 0
+							? "warning"
+							: "success"
+			);
+			setSnackbarOpen(true);
+			return failed.join(", ");
+		} finally {
+				setActionLoading(false);
+		}
+	};
+
 	return (
 		<div className="flex flex-col">
 			<Box
@@ -615,191 +825,14 @@ export default function ImageUploader({
 						)}
 					</Button>
 
-					{/* New UI area for uploading food */}
-					<TextField
-						label="Update Food (comma separated)"
-						fullWidth
-						value={foodText}
-						onChange={(e) => setFoodText(e.target.value)}
-						margin="normal"
-						variant="outlined"
+					<FoodEntryForm 
+						onSubmitFood={handleSubmitFood} 
+						isSubmitting={actionLoading}
+						foodCategory={foodCategory}
+						onCategoryChange={setFoodCategory}
+						foodAvailability={foodAvailability}
+						onAvailabilityChange={setFoodAvailability}
 					/>
-
-					<FormControl fullWidth margin="normal">
-						<InputLabel id="food-category-label">
-							Food Category
-						</InputLabel>
-
-						<Select
-							labelId="food-category-label"
-							value={foodCategory}
-							label="Food Category"
-							onChange={(event) =>
-								setFoodCategory(
-									event.target.value as FoodCategory
-								)
-							}
-						> 
-							<MenuItem value="produce">
-								PRODUCE
-							</MenuItem>
-
-							<MenuItem value="non-perishables">
-								NON-PERISHABLES
-							</MenuItem>
-
-							<MenuItem value="refrigerated">
-								REFRIGERATED
-							</MenuItem>
-
-							<MenuItem value="frozen">
-								FROZEN
-							</MenuItem>
-
-							<MenuItem value="bakery">
-								BAKERY
-							</MenuItem>
-
-							<MenuItem value="other">
-								OTHER
-							</MenuItem>
-
-
-							
-						</Select>
-					</FormControl>
-
-					<FormControl fullWidth margin="normal">
-						<InputLabel id="food-availability-label">
-							Availability
-						</InputLabel>
-
-						<Select
-							labelId="food-availability-label"
-							value={foodAvailability}
-							label="Availability"
-							onChange={(event) =>
-								setFoodAvailability(
-									event.target.value as Availability
-								)
-							}
-						>
-							<MenuItem value="in_stock">
-								IN STOCK
-							</MenuItem>
-
-							<MenuItem value="running_out">
-								RUNNING OUT
-							</MenuItem>
-
-							<MenuItem value="out_of_stock">
-								OUT OF STOCK
-							</MenuItem>
-						</Select>
-					</FormControl>
-
-					<Button
-						variant="contained"
-						color="success"
-						onClick={async () => {
-							const foodArray = foodText
-								.split(",")
-								.map((f) => f.trim())
-								.filter(Boolean);
-							console.log(foodArray);
-
-							// Upload each food item individually
-							// let successCount = 0;
-							// let errorCount = 0;
-							if (foodArray.length === 0) {
-								setSnackbarMessage("Enter a food item first.");
-								setSnackbarSeverity("warning");
-								setSnackbarOpen(true);
-								return;
-							}
-							setActionLoading(true);
-
-							const added: string[] = [];
-							const duplicates: string[] = [];
-							const failed: string[] = [];
-							try {
-								for (const foodItem of foodArray) {
-									try {
-										const result = await updateFood({
-											message: [foodItem], // Send as single item array
-											location: location,
-											availability: foodAvailability,
-											category: foodCategory,
-										});
-										if (result?.success === true) {
-											added.push(foodItem);
-										} else {
-											failed.push(foodItem);
-										}
-									} catch (error) {
-										if (
-											error instanceof Error &&
-											"status" in error &&
-											error.status === 409
-										) {
-											duplicates.push(foodItem);
-										} else {
-											console.error(`Error adding ${foodItem}:`, error);
-											failed.push(foodItem);
-										}
-									}
-								}
-	
-								setFoodText(failed.join(", "));
-	
-								if(failed.length === 0) {
-									setFoodAvailability("in_stock");
-								}
-								const messages: string[] = [];
-	
-								if (added.length > 0) {
-									messages.push(`Added: ${added.join(", ")}.`);
-								}
-	
-								if (duplicates.length > 0) {
-									messages.push(`Already listed: ${duplicates.join(", ")}.`);
-								}
-								if (failed.length > 0) {
-									messages.push(`Could not add: ${failed.join(", ")}.`);
-								}
-						
-								if (added.length > 0 || duplicates.length > 0) {
-									try {
-										await fetchFoodList();
-									} catch (error) {
-										console.error("Error refreshing inventory:", error);
-										messages.push("Refresh the page to see current inventory.");
-									}
-								}
-						
-								setSnackbarMessage(messages.join(" "));
-								setSnackbarSeverity(
-									failed.length > 0
-										? "error"
-											: duplicates.length > 0
-												? "warning"
-												: "success"
-									);
-									setSnackbarOpen(true);
-								} finally {
-									setActionLoading(false);
-								}
-							}}
-							fullWidth
-							disabled={actionLoading}
-							sx={{ marginTop: 2 }}
-						>
-							{actionLoading ? (
-								<CircularProgress size={24} color="inherit" />
-							) : (
-								"Update Food"
-							)}
-						</Button>
 
 					{/* PDF Upload Section */}
 					<TextField
@@ -969,6 +1002,9 @@ export default function ImageUploader({
 						<p>No food items found.</p>
 					) : (
 						<>
+							<div role="status">
+								{isSavingCategory && "Saving Category..."}
+							</div>
 							{foodCategories.map((category) => {
 								const categoryItems = filteredFoodList.filter((item) => {
 									const itemCategory = item.category ?? "other"
@@ -992,7 +1028,7 @@ export default function ImageUploader({
 												return;
 											}
 
-											handleCategoryChange(draggedFoodId,category.value);
+											handleCategoryChange(draggedFoodId, category.value);
 											setDraggedFoodId(null);
 										}}
 

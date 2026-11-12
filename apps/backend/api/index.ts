@@ -307,7 +307,7 @@ async function fetchImages(location: string) {
 //fetches the food list with ids for a given location from firebase
 async function fetchFoodWithIds(location: string): Promise<FoodItem[]> {
 	const foodArr: FoodItem[] = []
-	const querySnapshot = await getDocs(collection(db, location));
+	const querySnapshot = await adminDb.collection(location).get();
 	
 	querySnapshot.forEach((foodDoc) => {
 		const data = foodDoc.data();
