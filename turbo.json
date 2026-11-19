@@ -6,7 +6,8 @@
 		"MAPS_API_KEY",
 		"EXPRESS_PORT",
 		"GOOGLE_API_KEY",
-		"VISION_KEY_JSON"
+		"VISION_KEY_JSON",
+		"MAINTENANCE_MODE"
 	],
 	"tasks": {
 		"build": {
