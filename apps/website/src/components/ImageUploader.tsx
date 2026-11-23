@@ -14,6 +14,16 @@ async function getAuthToken(): Promise<string | undefined> {
 type Availability = "in_stock" | "running_out" | "out_of_stock";
 type AvailabilityFilter = Availability | "all";
 
+type FoodCategory = "produce" | "non-perishables" | "refrigerated" | "frozen" | "bakery" | "other";
+const foodCategories: { value: FoodCategory, label: string}[] = [
+	{ value: "produce", label: "Produce"},
+	{ value: "non-perishables", label: "Non-Perishables"},
+	{ value: "refrigerated", label: "Refrigerated"},
+	{ value: "frozen", label: "Frozen"},
+	{ value: "bakery", label: "Bakery"},
+	{ value: "other", label: "Other"},
+];
+
 import {
 	Box,
 	Button,
@@ -27,6 +37,7 @@ import {
 	Alert,
 } from "@mui/material";
 import { stringify } from "querystring";
+import { Category } from "@mui/icons-material";
 
 async function updateStatus({
 	message,
@@ -64,10 +75,12 @@ async function updateFood({
 	message,
 	location,
 	availability,
+	category,
 }: {
 	message: string[];
 	location: string;
 	availability: Availability;
+	category: FoodCategory;
 }) {
 	const token = await getAuthToken();
 
@@ -79,7 +92,7 @@ async function updateFood({
 				"Content-Type": "application/json",
 				...(token && { Authorization: `Bearer ${token}` }),
 			},
-			body: JSON.stringify({ message, availability }),
+			body: JSON.stringify({ message, availability, category }),
 		}
 	);
 
@@ -100,6 +113,128 @@ interface ImageUploaderProps {
 	location: string;
 }
 
+type FoodEntryFormProps = {
+	onSubmitFood: (text: string) => Promise<string>;
+	isSubmitting: boolean;
+	foodCategory: FoodCategory;
+	onCategoryChange: (value: FoodCategory) => void;
+	foodAvailability: Availability;
+	onAvailabilityChange: (value: Availability) => void;
+}
+
+function FoodEntryForm({
+	onSubmitFood,
+	isSubmitting,
+	foodCategory,
+	onCategoryChange,
+	foodAvailability,
+	onAvailabilityChange,
+}: FoodEntryFormProps) {
+	const [foodText, setFoodText] = useState<string>("");
+
+	const handleSubmit = async() => {
+		const remainingText = await onSubmitFood(foodText);
+		setFoodText(remainingText);
+	}
+	return (
+		<>
+			<TextField
+				label="Update Food (comma separated)"
+				fullWidth
+				value={foodText}
+				onChange={(e) => setFoodText(e.target.value)}
+				margin="normal"
+				variant="outlined"
+				disabled={isSubmitting}
+			/>
+			<FormControl fullWidth margin="normal" disabled={isSubmitting}>
+				<InputLabel id="food-category-label">
+					Food Category
+				</InputLabel>
+
+				<Select
+					labelId="food-category-label"
+					value={foodCategory}
+					label="Food Category"
+					onChange={(event) =>
+						onCategoryChange(
+							event.target.value as FoodCategory
+						)
+					}
+				>
+					<MenuItem value="produce">
+						PRODUCE
+					</MenuItem>
+
+					<MenuItem value="non-perishables">
+						NON-PERISHABLES
+					</MenuItem>
+
+					<MenuItem value="refrigerated">
+						REFRIGERATED
+					</MenuItem>
+
+					<MenuItem value="frozen">
+						FROZEN
+					</MenuItem>
+
+					<MenuItem value="bakery">
+						BAKERY
+					</MenuItem>
+
+					<MenuItem value="other">
+						OTHER
+					</MenuItem>
+				</Select>
+			</FormControl>
+
+			<FormControl fullWidth margin="normal" disabled={isSubmitting}>
+				<InputLabel id="food-availability-label">
+					Availability
+				</InputLabel>
+
+				<Select
+					labelId="food-availability-label"
+					value={foodAvailability}
+					label="Availability"
+					onChange={(event) =>
+						onAvailabilityChange(
+							event.target.value as Availability
+						)
+					}
+				>
+					<MenuItem value="in_stock">
+						IN STOCK
+					</MenuItem>
+
+					<MenuItem value="running_out">
+						RUNNING OUT
+					</MenuItem>
+
+					<MenuItem value="out_of_stock">
+						OUT OF STOCK
+					</MenuItem>
+				</Select>
+			</FormControl>
+
+			<Button
+				variant="contained"
+				color="success"
+				onClick={handleSubmit}
+				fullWidth
+				disabled={isSubmitting}
+				sx={{ marginTop: 2 }}
+			>
+				{isSubmitting ? (
+					<CircularProgress size={24} color="inherit" />
+				) : (
+					"Update Food"
+				)}
+			</Button>
+		</>
+	);
+}
+
 export default function ImageUploader({ 
 	signOut, 
 	location,
@@ -110,9 +245,10 @@ export default function ImageUploader({
 	const [actionLoading, setActionLoading] = useState<boolean>(false); // New loading state
 	const [uploadedUrl, setUploadedUrl] = useState<string | null>(null);
 	const [statusText, setStatusText] = useState<string>("");
-	const [foodText, setFoodText] = useState<string>("");
 	const [foodAvailability, setFoodAvailability] = useState<Availability>("in_stock");
 	const [availabilityFilter, setAvailabilityFilter] = useState<AvailabilityFilter>("all");
+	const [foodCategory, setFoodCategory] = useState<FoodCategory>("other");
+	const [isSavingCategory, setIsSavingCategory] = useState<boolean>(false);
 
 	// Snackbar state
 	const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -122,7 +258,7 @@ export default function ImageUploader({
 	);
 
 	// Food list state
-	const [foodList, setFoodList] = useState<{ id: string; labels: string[]; availability: Availability }[]>(
+	const [foodList, setFoodList] = useState<{ id: string; labels: string[]; availability: Availability, category?: FoodCategory }[]>(
 		[]
 	);
 	const filteredFoodList = foodList.filter((item) => {
@@ -132,6 +268,9 @@ export default function ImageUploader({
 			availability === availabilityFilter
 		);
 	});
+
+	const [draggedFoodId, setDraggedFoodId] = useState<string | null>(null);
+	const [dragOverCategory, setDragOverCategory] = useState<FoodCategory | null>(null);
 
 	const [foodLoading, setFoodLoading] = useState<boolean>(false);
 	const [selectedFoodIds, setSelectedFoodIds] = useState<string[]>([]);
@@ -152,7 +291,7 @@ export default function ImageUploader({
 		setFoodLoading(true);
 		try {
 			const response = await fetch(
-				`${process.env.NEXT_PUBLIC_API_URL}/food-ids/${loc}`
+				`${process.env.NEXT_PUBLIC_API_URL}/food-ids/${loc}`, {cache: "no-store"}
 			);
 			if (response.ok) {
 				const data = await response.json();
@@ -228,6 +367,63 @@ export default function ImageUploader({
 			setSnackbarOpen(true);
 		}
 	};
+
+	const handleCategoryChange = async (
+	id: string,
+	category: FoodCategory
+	) => {
+		if (isSavingCategory) {return};
+		setIsSavingCategory(true);
+		try {
+			const token = await getAuthToken();
+			const response = await fetch(
+				`${process.env.NEXT_PUBLIC_API_URL}/food/${location}/${id}/category`,
+				{
+					method: "PATCH",
+					headers: {
+						"Content-Type": "application/json",
+						...(token && {
+							Authorization: `Bearer ${token}`,
+						}),
+					},
+					body: JSON.stringify({
+						category,
+					}),
+				}	
+			);
+
+			if (!response.ok) {
+				throw new Error(
+					`Error updating category: ${response.statusText}`
+				);
+			}
+
+			// Replaces only the updated item's category while preserving the rest of the list.
+			setFoodList((currentFoodList) =>
+				currentFoodList.map((foodItem) =>
+					foodItem.id === id
+						? {
+								...foodItem,
+								category,
+							}
+						: foodItem
+				)
+			);
+
+			setSnackbarMessage("Category updated successfully.");
+			setSnackbarSeverity("success");
+			setSnackbarOpen(true);
+		} catch (error) {
+			console.error("Error updating category:", error);
+
+			setSnackbarMessage("Failed to update category.");
+			setSnackbarSeverity("error");
+			setSnackbarOpen(true);
+		} finally {
+			setIsSavingCategory(false);
+		}
+	};
+
 
 	// Delete selected food documents
 	const handleDeleteSelected = async () => {
@@ -436,6 +632,91 @@ export default function ImageUploader({
 		setSnackbarOpen(true);
 	}
 
+	const handleSubmitFood = async (text: string) => {
+		const foodArray = text
+		.split(",")
+		.map((f) => f.trim())
+		.filter(Boolean);
+
+		if (foodArray.length === 0) {
+			setSnackbarMessage("Enter a food item first.");
+			setSnackbarSeverity("warning");
+			setSnackbarOpen(true);
+			return text;
+		}
+		setActionLoading(true);
+
+		const added: string[] = [];
+		const duplicates: string[] = [];
+		const failed: string[] = [];
+		try {
+			for (const foodItem of foodArray) {
+				try {
+					const result = await updateFood({
+						message: [foodItem], // Send as single item array
+						location: location,
+						availability: foodAvailability,
+						category: foodCategory,
+					});
+					if (result?.success === true) {
+						added.push(foodItem);
+					} else {
+						failed.push(foodItem);
+					}
+				} catch (error) {
+					if (
+						error instanceof Error &&
+						"status" in error &&
+						error.status === 409
+					) {
+						duplicates.push(foodItem);
+					} else {
+						console.error(`Error adding ${foodItem}:`, error);
+						failed.push(foodItem);
+					}
+				}
+			}
+
+			if(failed.length === 0) {
+				setFoodAvailability("in_stock");
+			}
+			const messages: string[] = [];
+
+			if (added.length > 0) {
+				messages.push(`Added: ${added.join(", ")}.`);
+			}
+
+			if (duplicates.length > 0) {
+				messages.push(`Already listed: ${duplicates.join(", ")}.`);
+			}
+			if (failed.length > 0) {
+				messages.push(`Could not add: ${failed.join(", ")}.`);
+			}
+
+			if (added.length > 0 || duplicates.length > 0) {
+				try {
+					await fetchFoodList();
+				} catch (error) {
+					console.error("Error refreshing inventory:", error);
+					messages.push("Refresh the page to see current inventory.");
+				}
+			}
+
+			setSnackbarMessage(messages.join(" "));
+			setSnackbarSeverity(
+				failed.length > 0
+					? "error"
+						: duplicates.length > 0
+							? "warning"
+							: "success"
+			);
+			setSnackbarOpen(true);
+			return failed.join(", ");
+		} finally {
+				setActionLoading(false);
+		}
+	};
+
 	return (
 		<div className="flex flex-col">
 			<Box
@@ -544,146 +825,14 @@ export default function ImageUploader({
 						)}
 					</Button>
 
-					{/* New UI area for uploading food */}
-					<TextField
-						label="Update Food (comma separated)"
-						fullWidth
-						value={foodText}
-						onChange={(e) => setFoodText(e.target.value)}
-						margin="normal"
-						variant="outlined"
+					<FoodEntryForm 
+						onSubmitFood={handleSubmitFood} 
+						isSubmitting={actionLoading}
+						foodCategory={foodCategory}
+						onCategoryChange={setFoodCategory}
+						foodAvailability={foodAvailability}
+						onAvailabilityChange={setFoodAvailability}
 					/>
-
-					<FormControl fullWidth margin="normal">
-						<InputLabel id="food-availability-label">
-							Availability
-						</InputLabel>
-
-						<Select
-							labelId="food-availability-label"
-							value={foodAvailability}
-							label="Availability"
-							onChange={(event) =>
-								setFoodAvailability(
-									event.target.value as Availability
-								)
-							}
-						>
-							<MenuItem value="in_stock">
-								IN STOCK
-							</MenuItem>
-
-							<MenuItem value="running_out">
-								RUNNING OUT
-							</MenuItem>
-
-							<MenuItem value="out_of_stock">
-								OUT OF STOCK
-							</MenuItem>
-						</Select>
-					</FormControl>
-
-					<Button
-						variant="contained"
-						color="success"
-						onClick={async () => {
-							const foodArray = foodText
-								.split(",")
-								.map((f) => f.trim())
-								.filter(Boolean);
-							console.log(foodArray);
-
-							// Upload each food item individually
-							// let successCount = 0;
-							// let errorCount = 0;
-							if (foodArray.length === 0) {
-								setSnackbarMessage("Enter a food item first.");
-								setSnackbarSeverity("warning");
-								setSnackbarOpen(true);
-								return;
-							}
-							setActionLoading(true);
-
-							const added: string[] = [];
-							const duplicates: string[] = [];
-							const failed: string[] = [];
-							try {
-								for (const foodItem of foodArray) {
-									try {
-										const result = await updateFood({
-											message: [foodItem], // Send as single item array
-											location: location,
-											availability: foodAvailability,
-										});
-										if (result?.success === true) {
-											added.push(foodItem);
-										} else {
-											failed.push(foodItem);
-										}
-									} catch (error) {
-										if (
-											error instanceof Error &&
-											"status" in error &&
-											error.status === 409
-										) {
-											duplicates.push(foodItem);
-										} else {
-											console.error(`Error adding ${foodItem}:`, error);
-											failed.push(foodItem);
-										}
-									}
-								}
-	
-								setFoodText(failed.join(", "));
-	
-								if(failed.length === 0) {
-									setFoodAvailability("in_stock");
-								}
-								const messages: string[] = [];
-	
-								if (added.length > 0) {
-									messages.push(`Added: ${added.join(", ")}.`);
-								}
-	
-								if (duplicates.length > 0) {
-									messages.push(`Already listed: ${duplicates.join(", ")}.`);
-								}
-								if (failed.length > 0) {
-									messages.push(`Could not add: ${failed.join(", ")}.`);
-								}
-						
-								if (added.length > 0 || duplicates.length > 0) {
-									try {
-										await fetchFoodList();
-									} catch (error) {
-										console.error("Error refreshing inventory:", error);
-										messages.push("Refresh the page to see current inventory.");
-									}
-								}
-						
-								setSnackbarMessage(messages.join(" "));
-								setSnackbarSeverity(
-									failed.length > 0
-										? "error"
-											: duplicates.length > 0
-												? "warning"
-												: "success"
-									);
-									setSnackbarOpen(true);
-								} finally {
-									setActionLoading(false);
-								}
-							}}
-							fullWidth
-							disabled={actionLoading}
-							sx={{ marginTop: 2 }}
-						>
-							{actionLoading ? (
-								<CircularProgress size={24} color="inherit" />
-							) : (
-								"Update Food"
-							)}
-						</Button>
 
 					{/* PDF Upload Section */}
 					<TextField
@@ -847,56 +996,150 @@ export default function ImageUploader({
 							<MenuItem value="out_of_stock">Out of stock</MenuItem>
 						</Select>
 					</FormControl>
-
 					{foodLoading ? (
 						<CircularProgress size={24} />
 					) : foodList.length === 0 ? (
 						<p>No food items found.</p>
 					) : (
-						<ul style={{ paddingLeft: 20 }}>
-							{filteredFoodList.map((item) => (
-								<li
-									key={item.id}
-									style={{ display: "flex", alignItems: "center", marginBottom: 4 }}
-								>
-									<input
-										type="checkbox"
-										checked={selectedFoodIds.includes(item.id)}
-										onChange={() => handleSelectFood(item.id)}
-										style={{ marginRight: 8 }}
-									/>
-									<span style={{ flex: 1 }}>
-										{item.labels && item.labels.length > 0
-											? item.labels.join(", ")
-											: "(no label)"}
-									</span>
+						<>
+							<div role="status">
+								{isSavingCategory && "Saving Category..."}
+							</div>
+							{foodCategories.map((category) => {
+								const categoryItems = filteredFoodList.filter((item) => {
+									const itemCategory = item.category ?? "other"
+									return itemCategory === category.value;
+								})
 
-									<Select
-										size="small"
-										value={item.availability ?? "in_stock"}
-										onChange={(event) =>
-											handleAvailabilityChange(
-												item.id,
-												event.target.value as Availability
-											)
-										}
-										sx={{ minWidth: 150 }}
+								return (
+									<section 
+										key={category.value} 
+										onDragOver={(event) => 
+											{event.preventDefault()
+											
+											if (draggedFoodId !== null) {
+												setDragOverCategory(category.value);
+											}
+										}}
+										onDrop={ (event) => {
+											event.preventDefault();
+
+											if (draggedFoodId === null) {
+												return;
+											}
+
+											handleCategoryChange(draggedFoodId, category.value);
+											setDraggedFoodId(null);
+										}}
+
+										onDragLeave={(event) => {
+											const nextTarget = event.relatedTarget;
+
+											if (
+												!(nextTarget instanceof Node) ||
+												!event.currentTarget.contains(nextTarget)
+											) {
+												setDragOverCategory(null);
+											}
+										}}
+
+										style={{
+											borderBottom: dragOverCategory === category.value
+												? "3px solid #2563eb"
+												: "3px solid #ddd",
+											paddingBottom: 16,
+											marginBottom: 16,
+											transition: "border-color 150ms ease",
+										}}
 									>
-										<MenuItem value="in_stock">
-											IN STOCK
-										</MenuItem>
+										<h4>{category.label}</h4>
+										<ul style={{ paddingLeft: 20 }}>
+											{categoryItems.map((item) => (
+												<li
+													key={item.id}
+													style={{ display: "flex", alignItems: "center", marginBottom: 4 }}
+													draggable
+													onDragStart={() => setDraggedFoodId(item.id)}
+													onDragEnd={() => setDraggedFoodId(null)}
+												>
+													<input
+														type="checkbox"
+														checked={selectedFoodIds.includes(item.id)}
+														onChange={() => handleSelectFood(item.id)}
+														style={{ marginRight: 8 }}
+													/>
+													<span style={{ flex: 1 }}>
+														{item.labels && item.labels.length > 0
+															? item.labels.join(", ")
+															: "(no label)"}
+													</span>
 
-										<MenuItem value="running_out">
-											RUNNING OUT
-										</MenuItem>
+													<Select
+														size="small"
+														value={item.availability ?? "in_stock"}
+														onChange={(event) =>
+															handleAvailabilityChange(
+																item.id,
+																event.target.value as Availability
+															)
+														}
+														sx={{ minWidth: 150 }}
+													>
+														<MenuItem value="in_stock">
+															IN STOCK
+														</MenuItem>
 
-										<MenuItem value="out_of_stock">
-											OUT OF STOCK
-										</MenuItem>
-									</Select>
-								</li>
-							))}
-						</ul>
+														<MenuItem value="running_out">
+															RUNNING OUT
+														</MenuItem>
+
+														<MenuItem value="out_of_stock">
+															OUT OF STOCK
+														</MenuItem>
+													</Select>
+
+													<Select
+														size="small"
+														value={item.category ?? "other"}
+														onChange={(event) =>
+															handleCategoryChange(
+																item.id,
+																event.target.value as FoodCategory
+															)
+														}
+														sx={{ minWidth: 150 }}
+													>
+														<MenuItem value="produce">
+															PRODUCE
+														</MenuItem>
+
+														<MenuItem value="non-perishables">
+															NON-PERISHABLES
+														</MenuItem>
+
+														<MenuItem value="refrigerated">
+															REFRIGERATED
+														</MenuItem>
+
+														<MenuItem value="frozen">
+															FROZEN
+														</MenuItem>
+
+														<MenuItem value="bakery">
+															BAKERY
+														</MenuItem>
+
+														<MenuItem value="other">
+															OTHER
+														</MenuItem>
+													</Select>
+												</li>
+											))}
+										</ul>
+									</section>
+								);
+							})}
+						</>
 					)}
 					{selectedFoodIds.length > 0 && (
 						<Button

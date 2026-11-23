@@ -8,10 +8,12 @@ import { Dialog, DialogContent } from "@mui/material";
 import FoodLabel from "../FoodLabel";
 
 type Availability = "in_stock" | "running_out" | "out_of_stock";
+type FoodCategory = "produce" | "non-perishables" | "refrigerated" | "frozen" | "bakery" | "other";
 interface FoodItem {
 	id: string;
 	labels: string[];
 	availability: Availability;
+	category?: FoodCategory;
 }
 
 interface imageData {
@@ -39,6 +41,15 @@ interface Config {
 		dbName: string;
 	};
 }
+
+const foodCategories: { value: FoodCategory; label: string }[] = [
+	{ value: "produce" , label: "Produce"},
+	{ value: "non-perishables", label: "Non-Perishables"},
+	{ value: "refrigerated" , label: "Refrigerated"},
+	{ value: "frozen", label: "Frozen"},
+	{ value: "bakery", label: "Bread and Bakery"},
+	{ value: "other", label: "Other"},
+]
 
 export default function LocationTemplate({ config }: Config) {
 	const [foodList, setFoodList] = useState<FoodItem[]>([]);
@@ -101,10 +112,22 @@ export default function LocationTemplate({ config }: Config) {
 			}
 		};
 
+		const handleVisibilityChange = () =>  {
+			if (document.visibilityState === "visible") {
+				fetchData();
+			}
+		};
+
+		document.addEventListener("visibilitychange",handleVisibilityChange);
+
 		fetchImages();
 		fetchData();
 		fetchStatus();
-	}, [config.dbName]);
+		return () => {
+			document.removeEventListener("visibilitychange",handleVisibilityChange);
+		};
+	}, 
+	[config.dbName]);
 
 	function ImageCard({ src }: { src: string }) {
 		const [imageOpen, setImageOpen] = useState(false);
@@ -201,14 +224,36 @@ export default function LocationTemplate({ config }: Config) {
 							"Last updated unavailable"
 						)}
 					</p>
-					<div className="text-slugSecondaryBlue font-semibold text-2xl grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-						{/* Passes each item's availability to its colored status badge with a legacy-data fallback. */}
-						{foodList
-							.sort((a, b) => a.labels.join(", ").length - b.labels.join(", ").length)
-							.map((food) => (
-								<FoodLabel key={food.id} label={food.labels.join(", ")} availability={food.availability ?? "in_stock"}/>
-							))}
-					</div>
+					{foodCategories.map((category) => {
+						const items = foodList.filter(
+							(food) => (food.category ?? "other") === category.value
+						);
+
+						if (items.length === 0) return null;
+
+						return (
+							<section key={category.value} className="mb-6">
+								<h3 className="text-slugBlue text-xl font-semibold mb-2">
+									{category.label}
+								</h3>
+
+								<div className="text-slugSecondaryBlue font-semibold text-2xl grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+									{items
+										.sort(
+											(a, b) =>
+												a.labels.join(", ").length - b.labels.join(", ").length
+										)
+										.map((food) => (
+											<FoodLabel
+												key={food.id}
+												label={food.labels.join(", ")}
+												availability={food.availability ?? "in_stock"}
+											/>
+										))}
+								</div>
+							</section>
+						);
+					})}
 				</div>
 			</div>
 			{/* Product Images */}
